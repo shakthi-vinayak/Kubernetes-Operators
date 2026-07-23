@@ -1,0 +1,7 @@
+# RBAC configuration for the platform operator.
+# This ClusterRole will be populated by controller-gen when running `make manifests`.
+# The generated role includes permissions from the +kubebuilder:rbac markers.
+resources:
+  - role.yaml
+  - role_binding.yaml
+  - service_account.yaml

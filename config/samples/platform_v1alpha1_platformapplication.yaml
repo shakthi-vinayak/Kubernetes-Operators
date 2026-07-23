@@ -1,0 +1,55 @@
+apiVersion: platform.example.io/v1alpha1
+kind: PlatformApplication
+metadata:
+  name: payment-service
+  namespace: default
+spec:
+  image:
+    repository: ghcr.io/example/payment-service
+    tag: "2.4.1"
+    pullPolicy: IfNotPresent
+
+  replicas:
+    min: 3
+    max: 10
+
+  service:
+    port: 8080
+    type: ClusterIP
+
+  configuration:
+    LOG_LEVEL: "info"
+    ENVIRONMENT: "production"
+
+  autoscaling:
+    enabled: true
+    targetCPUUtilization: 70
+
+  gateway:
+    enabled: true
+    host: payments.example.com
+    gatewayRef: gateway-system/main-gateway
+    pathPrefix: /
+
+  observability:
+    metrics: true
+
+  security:
+    networkPolicy: true
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  healthChecks:
+    livenessPath: /healthz
+    readinessPath: /readyz
+
+  rollout:
+    strategy: RollingUpdate
+    maxUnavailable: "1"
+    maxSurge: "1"

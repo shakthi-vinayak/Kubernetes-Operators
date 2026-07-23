@@ -1,0 +1,11 @@
+# Adds namespace to all resources.
+namespace: platform-operator-system
+
+# Value of this field is prepended to the
+# temporary names of all resources.
+namePrefix: platform-operator-
+
+resources:
+  - ../crd
+  - ../rbac
+  - ../manager
