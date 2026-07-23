@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -9,30 +11,27 @@ var (
 	// ReconcileTotal counts total reconciliation attempts.
 	ReconcileTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "platform_operator_reconcile_total",
-			Help:      "Total number of reconciliation attempts",
-			Namespace: "platform_operator",
+			Name: "platform_operator_reconcile_total",
+			Help: "Total number of reconciliation attempts",
 		},
 		[]string{"result"},
 	)
 
-	// ReconcileErrorsTotal counts reconciliation errors.
+	// ReconcileErrorsTotal counts reconciliation errors by type.
 	ReconcileErrorsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "platform_operator_reconcile_errors_total",
-			Help:      "Total number of reconciliation errors",
-			Namespace: "platform_operator",
+			Name: "platform_operator_reconcile_errors_total",
+			Help: "Total number of reconciliation errors",
 		},
-		[]string{"error_type"},
+		[]string{"error_type", "error_class"},
 	)
 
 	// ReconcileDurationSeconds records reconciliation duration.
 	ReconcileDurationSeconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:      "platform_operator_reconcile_duration_seconds",
-			Help:      "Duration of reconciliation in seconds",
-			Namespace: "platform_operator",
-			Buckets:   prometheus.DefBuckets,
+			Name:    "platform_operator_reconcile_duration_seconds",
+			Help:    "Duration of reconciliation in seconds",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0},
 		},
 		[]string{"result"},
 	)
@@ -40,10 +39,55 @@ var (
 	// ManagedApplications tracks the current number of managed applications.
 	ManagedApplications = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name:      "platform_operator_managed_applications",
-			Help:      "Current number of managed PlatformApplication resources",
-			Namespace: "platform_operator",
+			Name: "platform_operator_managed_applications",
+			Help: "Current number of managed PlatformApplication resources",
 		},
+	)
+
+	// SubReconcileTotal counts sub-reconciler operations by resource kind and result.
+	SubReconcileTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "platform_operator_sub_reconcile_total",
+			Help: "Total number of sub-reconciler operations",
+		},
+		[]string{"resource", "result"},
+	)
+
+	// SubReconcileDurationSeconds records sub-reconciler operation duration.
+	SubReconcileDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "platform_operator_sub_reconcile_duration_seconds",
+			Help:    "Duration of sub-reconciler operations in seconds",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0},
+		},
+		[]string{"resource"},
+	)
+
+	// ResourceApplyTotal counts resource apply operations by kind and outcome.
+	ResourceApplyTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "platform_operator_resource_apply_total",
+			Help: "Total number of resource apply operations (SSA)",
+		},
+		[]string{"resource", "outcome"},
+	)
+
+	// ReconcileRequeueTotal counts requeues by reason.
+	ReconcileRequeueTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "platform_operator_reconcile_requeue_total",
+			Help: "Total number of reconciliation requeues",
+		},
+		[]string{"reason"},
+	)
+
+	// StatusUpdateTotal counts status update attempts and conflicts.
+	StatusUpdateTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "platform_operator_status_update_total",
+			Help: "Total number of status update attempts",
+		},
+		[]string{"result"},
 	)
 )
 
@@ -53,5 +97,32 @@ func init() {
 		ReconcileErrorsTotal,
 		ReconcileDurationSeconds,
 		ManagedApplications,
+		SubReconcileTotal,
+		SubReconcileDurationSeconds,
+		ResourceApplyTotal,
+		ReconcileRequeueTotal,
+		StatusUpdateTotal,
 	)
+}
+
+// ObserveReconcile records reconciliation metrics (total, duration, requeue).
+func ObserveReconcile(result string, duration time.Duration) {
+	ReconcileTotal.WithLabelValues(result).Inc()
+	ReconcileDurationSeconds.WithLabelValues(result).Observe(duration.Seconds())
+}
+
+// ObserveSubReconcile records sub-reconciler metrics.
+func ObserveSubReconcile(resource, result string, duration time.Duration) {
+	SubReconcileTotal.WithLabelValues(resource, result).Inc()
+	SubReconcileDurationSeconds.WithLabelValues(resource).Observe(duration.Seconds())
+}
+
+// ObserveResourceApply records a resource apply operation.
+func ObserveResourceApply(resource, outcome string) {
+	ResourceApplyTotal.WithLabelValues(resource, outcome).Inc()
+}
+
+// ObserveError records a reconciliation error with classification.
+func ObserveError(errorType, errorClass string) {
+	ReconcileErrorsTotal.WithLabelValues(errorType, errorClass).Inc()
 }

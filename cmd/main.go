@@ -84,8 +84,10 @@ func main() {
 	}
 
 	if err = (&controller.PlatformApplicationReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		Recorder:    mgr.GetEventRecorderFor("platform-operator"),
+		Concurrency: concurrentReconciles,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PlatformApplication")
 		os.Exit(1)

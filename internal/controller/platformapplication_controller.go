@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,13 +10,16 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	platformv1alpha1 "github.com/example/platform-operator/api/v1alpha1"
 	"github.com/example/platform-operator/internal/controller/subreconcilers"
+	platformerrors "github.com/example/platform-operator/internal/errors"
 	"github.com/example/platform-operator/internal/metrics"
 	"github.com/example/platform-operator/internal/status"
 )
@@ -27,6 +31,12 @@ const (
 
 	// requeueDelay is the default requeue delay for transient errors.
 	requeueDelay = 30 * time.Second
+
+	// conflictRequeueDelay is a short delay for optimistic concurrency conflicts.
+	conflictRequeueDelay = 1 * time.Second
+
+	// progressCheckDelay is the requeue delay when waiting for replicas to become ready.
+	progressCheckDelay = 10 * time.Second
 )
 
 // PlatformApplicationReconciler reconciles a PlatformApplication object.
@@ -38,13 +48,19 @@ const (
 //  4. Update the status to reflect the current state
 //  5. Return appropriate requeue behavior
 //
-// The reconciler is idempotent: calling it multiple times with the same
-// desired state will not produce additional API writes. It is restart-safe:
-// the controller can be terminated and restarted without losing state, as
-// all state is stored in Kubernetes resources.
+// The reconciler is idempotent, restart-safe, and handles errors with
+// classification-based retry strategies:
+//   - Transient errors: exponential backoff via controller-runtime
+//   - Conflict errors: short requeue delay (1s) for fresh state
+//   - Permanent errors: no retry, condition set to Degraded
 type PlatformApplicationReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+
+	// Concurrency is the maximum number of concurrent reconcile workers.
+	// Defaults to 1 if not set.
+	Concurrency int
 }
 
 // +kubebuilder:rbac:groups=platform.example.io,resources=platformapplications,verbs=get;list;watch;create;update;patch;delete
@@ -57,6 +73,7 @@ type PlatformApplicationReconciler struct {
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is the main reconciliation loop for PlatformApplication resources.
 //
@@ -64,9 +81,12 @@ type PlatformApplicationReconciler struct {
 // resource is created, updated, or deleted. It may also be called periodically
 // by the resync mechanism or due to events from watched resources.
 //
-// The function must be idempotent and handle duplicate events gracefully.
+// The function is idempotent and handles duplicate events gracefully.
 func (r *PlatformApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("controller", "platformapplication")
+	logger := log.FromContext(ctx).WithValues(
+		"controller", "platformapplication",
+		"resource", req.NamespacedName.String(),
+	)
 	ctx = log.IntoContext(ctx, logger)
 	startTime := time.Now()
 
@@ -75,15 +95,13 @@ func (r *PlatformApplicationReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err := r.Get(ctx, req.NamespacedName, app); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Resource was deleted after the reconcile request was queued.
-			// This is normal — Kubernetes will garbage-collect owned resources
-			// via owner references. No action needed.
-			logger.Info("PlatformApplication not found, likely deleted", "name", req.Name, "namespace", req.Namespace)
+			// Kubernetes GC handles owned resources via owner references.
+			logger.Info("resource not found, likely deleted")
 			return ctrl.Result{}, nil
 		}
-		// Transient error (API server unavailable, network issue).
-		// Return error to trigger retry with exponential backoff.
-		logger.Error(err, "unable to fetch PlatformApplication")
-		metrics.ReconcileErrorsTotal.WithLabelValues("fetch_error").Inc()
+		// Transient error — return error to trigger retry with exponential backoff.
+		logger.Error(err, "unable to fetch resource")
+		metrics.ObserveError("fetch_error", string(platformerrors.Classify(err)))
 		return ctrl.Result{}, err
 	}
 
@@ -96,10 +114,10 @@ func (r *PlatformApplicationReconciler) Reconcile(ctx context.Context, req ctrl.
 	if !controllerutil.ContainsFinalizer(app, finalizerName) {
 		controllerutil.AddFinalizer(app, finalizerName)
 		if err := r.Update(ctx, app); err != nil {
+			logger.Error(err, "unable to add finalizer")
 			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
 		}
-		// Re-queue after finalizer update — the update event will trigger
-		// another reconciliation.
+		// The update event will trigger another reconciliation.
 		return ctrl.Result{}, nil
 	}
 
@@ -107,7 +125,7 @@ func (r *PlatformApplicationReconciler) Reconcile(ctx context.Context, req ctrl.
 	status.SetProgressing(&app.Status, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
 	status.SetConfigurationValid(&app.Status, metav1.ConditionTrue, "Valid", "Configuration is valid")
 
-	// Step 3: Reconcile all child resources.
+	// Step 3: Reconcile all child resources with sub-reconciler metrics.
 	reconcileErr := r.reconcileResources(ctx, app)
 
 	// Step 4: Update status regardless of reconcile outcome.
@@ -118,112 +136,186 @@ func (r *PlatformApplicationReconciler) Reconcile(ctx context.Context, req ctrl.
 	r.updateDeploymentStatus(ctx, app)
 
 	// Set conditions based on reconcile outcome.
-	if reconcileErr != nil {
-		status.SetProgressing(&app.Status, metav1.ConditionFalse, "ReconcileError", reconcileErr.Error())
-		status.SetDegraded(&app.Status, metav1.ConditionTrue, "ReconcileError", reconcileErr.Error())
-		status.SetReady(&app.Status, metav1.ConditionFalse, "ReconcileError", "Reconciliation failed")
-	} else if app.Status.ReadyReplicas >= app.Spec.Replicas.Min {
-		status.SetProgressing(&app.Status, metav1.ConditionFalse, "Deployed", "All resources reconciled successfully")
-		status.SetDegraded(&app.Status, metav1.ConditionFalse, "Healthy", "Application is healthy")
-		status.SetReady(&app.Status, metav1.ConditionTrue, "Available", "Application is available")
-	} else {
-		status.SetProgressing(&app.Status, metav1.ConditionTrue, "Deploying", fmt.Sprintf("Waiting for %d/%d replicas", app.Status.ReadyReplicas, app.Spec.Replicas.Min))
-		status.SetDegraded(&app.Status, metav1.ConditionFalse, "Deploying", "Deployment is rolling out")
-		status.SetReady(&app.Status, metav1.ConditionFalse, "InsufficientReplicas", fmt.Sprintf("Only %d/%d replicas ready", app.Status.ReadyReplicas, app.Spec.Replicas.Min))
-	}
+	result := r.setConditions(app, reconcileErr)
 
 	// Set URL from gateway configuration.
 	if app.Spec.Gateway.Enabled && app.Spec.Gateway.Host != "" {
 		app.Status.URL = fmt.Sprintf("https://%s", app.Spec.Gateway.Host)
 	}
 
+	// Update status on the API server.
 	if err := r.Status().Update(ctx, app); err != nil {
+		metrics.StatusUpdateTotal.WithLabelValues("error").Inc()
 		if apierrors.IsConflict(err) {
-			// Optimistic concurrency conflict — the resource was updated by
-			// another process. Re-queue to retry with fresh state.
+			metrics.StatusUpdateTotal.WithLabelValues("conflict").Inc()
+			metrics.ReconcileRequeueTotal.WithLabelValues("status_conflict").Inc()
 			logger.Info("status update conflict, re-queuing")
-			return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
 		}
 		logger.Error(err, "unable to update status")
 		return ctrl.Result{}, err
 	}
+	metrics.StatusUpdateTotal.WithLabelValues("success").Inc()
 
 	// Step 5: Record metrics and return.
-	duration := time.Since(startTime).Seconds()
+	duration := time.Since(startTime)
+
 	if reconcileErr != nil {
-		metrics.ReconcileTotal.WithLabelValues("error").Inc()
-		metrics.ReconcileDurationSeconds.WithLabelValues("error").Observe(duration)
-		metrics.ReconcileErrorsTotal.WithLabelValues("reconcile_error").Inc()
-		return ctrl.Result{RequeueAfter: requeueDelay}, reconcileErr
+		return r.handleErrorResult(ctx, app, reconcileErr, duration)
 	}
 
-	metrics.ReconcileTotal.WithLabelValues("success").Inc()
-	metrics.ReconcileDurationSeconds.WithLabelValues("success").Observe(duration)
+	metrics.ObserveReconcile("success", duration)
 
 	// If not all replicas are ready, re-queue to check progress.
 	if app.Status.ReadyReplicas < app.Spec.Replicas.Min {
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		metrics.ReconcileRequeueTotal.WithLabelValues("replicas_not_ready").Inc()
+		logger.Info("waiting for replicas",
+			"ready", app.Status.ReadyReplicas,
+			"desired", app.Spec.Replicas.Min)
+		return ctrl.Result{RequeueAfter: progressCheckDelay}, nil
 	}
 
-	logger.Info("reconciliation complete", "duration", duration)
-	return ctrl.Result{}, nil
+	logger.Info("reconciliation complete", "duration_seconds", duration.Seconds(),
+		"readyReplicas", app.Status.ReadyReplicas)
+	return result, nil
 }
 
 // reconcileResources applies all child resources in sequence.
-// Each sub-reconciler computes the desired state and applies it using SSA.
+// Each sub-reconciler is timed and its metrics are recorded.
 func (r *PlatformApplicationReconciler) reconcileResources(ctx context.Context, app *platformv1alpha1.PlatformApplication) error {
-	// Reconcile Deployment.
-	if _, err := subreconcilers.ReconcileDeployment(ctx, r.Client, r.Scheme, app); err != nil {
-		return fmt.Errorf("reconciling Deployment: %w", err)
+	type subReconciler struct {
+		name string
+		fn   func() error
 	}
 
-	// Reconcile Service.
-	if _, err := subreconcilers.ReconcileService(ctx, r.Client, r.Scheme, app); err != nil {
-		return fmt.Errorf("reconciling Service: %w", err)
+	reconcilers := []subReconciler{
+		{"Deployment", func() error {
+			_, err := subreconcilers.ReconcileDeployment(ctx, r.Client, r.Scheme, app)
+			return err
+		}},
+		{"Service", func() error {
+			_, err := subreconcilers.ReconcileService(ctx, r.Client, r.Scheme, app)
+			return err
+		}},
+		{"HPA", func() error {
+			_, err := subreconcilers.ReconcileHPA(ctx, r.Client, r.Scheme, app)
+			return err
+		}},
+		{"HTTPRoute", func() error {
+			_, err := subreconcilers.ReconcileHTTPRoute(ctx, r.Client, r.Scheme, app)
+			return err
+		}},
+		{"NetworkPolicy", func() error {
+			_, err := subreconcilers.ReconcileNetworkPolicy(ctx, r.Client, r.Scheme, app)
+			return err
+		}},
+		{"PodDisruptionBudget", func() error {
+			_, err := subreconcilers.ReconcilePDB(ctx, r.Client, r.Scheme, app)
+			return err
+		}},
+		{"ServiceMonitor", func() error {
+			_, err := subreconcilers.ReconcileServiceMonitor(ctx, r.Client, r.Scheme, app)
+			return err
+		}},
 	}
 
-	// Reconcile HPA (creates or deletes based on autoscaling.enabled).
-	if _, err := subreconcilers.ReconcileHPA(ctx, r.Client, r.Scheme, app); err != nil {
-		return fmt.Errorf("reconciling HPA: %w", err)
-	}
+	for _, sr := range reconcilers {
+		srStart := time.Now()
+		if err := sr.fn(); err != nil {
+			srDuration := time.Since(srStart)
+			classifiedErr := platformerrors.ClassifyOrWrap(err, app.Name, sr.name)
+			metrics.ObserveSubReconcile(sr.name, "error", srDuration)
+			metrics.ObserveError(sr.name, string(classifiedErr.Class))
 
-	// Reconcile HTTPRoute (creates or deletes based on gateway.enabled).
-	if _, err := subreconcilers.ReconcileHTTPRoute(ctx, r.Client, r.Scheme, app); err != nil {
-		return fmt.Errorf("reconciling HTTPRoute: %w", err)
-	}
+			// Record a Kubernetes event for the failure.
+			r.Recorder.Eventf(app, "Warning", "ReconcileFailed",
+				"Failed to reconcile %s: %v", sr.name, classifiedErr)
 
-	// Reconcile NetworkPolicy (creates or deletes based on security.networkPolicy).
-	if _, err := subreconcilers.ReconcileNetworkPolicy(ctx, r.Client, r.Scheme, app); err != nil {
-		return fmt.Errorf("reconciling NetworkPolicy: %w", err)
-	}
+			return fmt.Errorf("reconciling %s: %w", sr.name, classifiedErr)
+		}
 
-	// Reconcile PodDisruptionBudget (creates or deletes based on replica count).
-	if _, err := subreconcilers.ReconcilePDB(ctx, r.Client, r.Scheme, app); err != nil {
-		return fmt.Errorf("reconciling PDB: %w", err)
-	}
-
-	// Reconcile ServiceMonitor (creates or deletes based on observability.metrics).
-	if _, err := subreconcilers.ReconcileServiceMonitor(ctx, r.Client, r.Scheme, app); err != nil {
-		return fmt.Errorf("reconciling ServiceMonitor: %w", err)
+		srDuration := time.Since(srStart)
+		metrics.ObserveSubReconcile(sr.name, "success", srDuration)
 	}
 
 	return nil
 }
 
+// setConditions sets status conditions based on the reconciliation outcome.
+func (r *PlatformApplicationReconciler) setConditions(app *platformv1alpha1.PlatformApplication, reconcileErr error) ctrl.Result {
+	if reconcileErr != nil {
+		status.SetProgressing(&app.Status, metav1.ConditionFalse, "ReconcileError", reconcileErr.Error())
+		status.SetDegraded(&app.Status, metav1.ConditionTrue, "ReconcileError", reconcileErr.Error())
+		status.SetReady(&app.Status, metav1.ConditionFalse, "ReconcileError", "Reconciliation failed")
+		return ctrl.Result{}
+	}
+
+	if app.Status.ReadyReplicas >= app.Spec.Replicas.Min {
+		status.SetProgressing(&app.Status, metav1.ConditionFalse, "Deployed", "All resources reconciled successfully")
+		status.SetDegraded(&app.Status, metav1.ConditionFalse, "Healthy", "Application is healthy")
+		status.SetReady(&app.Status, metav1.ConditionTrue, "Available", "Application is available")
+		return ctrl.Result{}
+	}
+
+	status.SetProgressing(&app.Status, metav1.ConditionTrue, "Deploying",
+		fmt.Sprintf("Waiting for %d/%d replicas", app.Status.ReadyReplicas, app.Spec.Replicas.Min))
+	status.SetDegraded(&app.Status, metav1.ConditionFalse, "Deploying", "Deployment is rolling out")
+	status.SetReady(&app.Status, metav1.ConditionFalse, "InsufficientReplicas",
+		fmt.Sprintf("Only %d/%d replicas ready", app.Status.ReadyReplicas, app.Spec.Replicas.Min))
+	return ctrl.Result{RequeueAfter: progressCheckDelay}
+}
+
+// handleErrorResult processes reconciliation errors and returns appropriate requeue behavior.
+func (r *PlatformApplicationReconciler) handleErrorResult(ctx context.Context, app *platformv1alpha1.PlatformApplication, reconcileErr error, duration time.Duration) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Classify the error.
+	var recErr *platformerrors.ReconcileError
+	if errors.As(reconcileErr, &recErr) {
+		metrics.ObserveReconcile("error", duration)
+		metrics.ObserveError(recErr.Kind, string(recErr.Class))
+
+		switch recErr.Class {
+		case platformerrors.ClassConflict:
+			metrics.ReconcileRequeueTotal.WithLabelValues("conflict").Inc()
+			logger.Info("conflict error, re-queuing with short delay")
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
+
+		case platformerrors.ClassPermanent:
+			// Permanent errors should not be retried aggressively.
+			// Record event and requeue with long delay for eventual manual intervention.
+			r.Recorder.Eventf(app, "Warning", "PermanentError",
+				"Permanent error (manual intervention required): %v", recErr)
+			logger.Error(recErr, "permanent reconciliation error — will retry slowly")
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+
+		case platformerrors.ClassTransient:
+			metrics.ReconcileRequeueTotal.WithLabelValues("transient").Inc()
+			logger.Info("transient error, will retry with backoff", "error", recErr.Err)
+			return ctrl.Result{RequeueAfter: requeueDelay}, reconcileErr
+		}
+	}
+
+	// Unknown error — use default backoff.
+	metrics.ObserveReconcile("error", duration)
+	metrics.ObserveError("unknown", string(platformerrors.ClassUnknown))
+	metrics.ReconcileRequeueTotal.WithLabelValues("unknown").Inc()
+	return ctrl.Result{RequeueAfter: requeueDelay}, reconcileErr
+}
+
 // handleDeletion processes the finalizer cleanup before the resource is deleted.
-// The cleanup must be idempotent: calling it multiple times must be safe.
+// The cleanup is idempotent: calling it multiple times is safe.
 func (r *PlatformApplicationReconciler) handleDeletion(ctx context.Context, app *platformv1alpha1.PlatformApplication) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if !controllerutil.ContainsFinalizer(app, finalizerName) {
-		// No finalizer — nothing to clean up. Kubernetes GC handles owned resources.
 		return ctrl.Result{}, nil
 	}
 
 	logger.Info("handling deletion", "name", app.Name, "namespace", app.Namespace)
 
-	// Perform cleanup operations.
-	// Currently: log the cleanup. In a production operator, this might:
+	// Perform cleanup operations (currently a no-op — owner references handle GC).
+	// In a production operator, this might:
 	// - Remove external DNS records
 	// - Clean up external load balancer configurations
 	// - Emit audit events
@@ -233,17 +325,18 @@ func (r *PlatformApplicationReconciler) handleDeletion(ctx context.Context, app 
 	controllerutil.RemoveFinalizer(app, finalizerName)
 	if err := r.Update(ctx, app); err != nil {
 		if apierrors.IsConflict(err) {
-			return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
 	}
 
-	logger.Info("finalizer removed, deletion will proceed", "name", app.Name, "namespace", app.Namespace)
+	r.Recorder.Event(app, "Normal", "Deleting", "Finalizer removed, deletion will proceed")
+	logger.Info("finalizer removed, deletion will proceed")
 	return ctrl.Result{}, nil
 }
 
 // updateDeploymentStatus fetches the current Deployment and updates
-// ready replica count in the PlatformApplication status.
+// the ready replica count in the PlatformApplication status.
 func (r *PlatformApplicationReconciler) updateDeploymentStatus(ctx context.Context, app *platformv1alpha1.PlatformApplication) {
 	dep := &appsv1.Deployment{}
 	if err := r.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, dep); err != nil {
@@ -253,12 +346,26 @@ func (r *PlatformApplicationReconciler) updateDeploymentStatus(ctx context.Conte
 }
 
 // SetupWithManager sets up the controller with the Manager.
-// It watches PlatformApplication as the primary resource and owns
-// Deployment, Service, HPA, and other child resources.
+// It configures concurrency, rate limiting, and resource watches.
 func (r *PlatformApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Wire the event recorder if not already set.
+	if r.Recorder == nil {
+		r.Recorder = mgr.GetEventRecorderFor("platform-operator")
+	}
+
+	concurrency := r.Concurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&platformv1alpha1.PlatformApplication{}).
 		Owns(&appsv1.Deployment{}).
 		Named("platformapplication").
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: concurrency,
+			// controller-runtime's default rate limiter provides
+			// exponential backoff (5ms to 1000s) for error retries.
+		}).
 		Complete(r)
 }
