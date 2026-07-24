@@ -519,20 +519,20 @@ helm install platform-operator charts/platform-operator \
 | M8: Packaging & GitOps | Done | Kustomize overlays (dev/staging/prod), webhook manifests, Argo CD examples |
 | M9: API Evolution | Done | v1beta1 API with EnvFrom/PodAnnotations, hub/spoke conversion webhooks |
 | M10: Scale & Performance | Done | Benchmarks, scale testing (100-app), pprof profiling, performance metrics |
-| M11: High Availability | Planned | Leader election tuning, multi-replica deployment, failover testing |
-| M12: Concurrency | Planned | Configurable worker concurrency, race-safe shared state |
-| M13: Failure Engineering | Planned | Fault injection tests, error categorization |
-| M14: Advanced Observability | Planned | Enhanced Grafana dashboards, SLO-based alerting |
-| M15: Advanced Tracing | Planned | Per-sub-reconciler OpenTelemetry spans with correlation IDs |
-| M16: Advanced Security | Planned | Policy-as-code (OPA/Kyverno), signed artifacts, SLSA Level 3 |
-| M17: Extended Testing | Planned | Chaos testing, mutation testing, coverage thresholds |
-| M18: Extended CI/CD | Planned | Canary deployments, automated rollback, multi-cluster promotion |
-| M19: Advanced Packaging | Planned | Helm operator bundles, OLM catalog, Kustomize components |
-| M20: Advanced GitOps | Planned | Progressive delivery (Argo Rollouts), blue-green/canary strategies |
-| M21: API Maturity | Planned | v1 GA API, field deprecation, conversion strategy validation |
-| M22: Scale & Optimization | Planned | 1000+ CR scale testing, caching optimization, rate limiting |
-| M23: Operations | Planned | Operations guide, troubleshooting guide, demo scenario |
-| M24: Documentation | Planned | All docs, ADRs, README, CONTRIBUTING, SECURITY, CHANGELOG |
+| M11: High Availability | Done | Leader election tuning, multi-replica deployment, failover testing |
+| M12: Concurrency | Done | Configurable worker concurrency, race-safe shared state |
+| M13: Failure Engineering | Done | Fault injection tests, error categorization |
+| M14: Advanced Observability | Done | Enhanced Grafana dashboards, SLO-based alerting |
+| M15: Advanced Tracing | Done | Per-sub-reconciler OpenTelemetry spans with correlation IDs |
+| M16: Advanced Security | Done | Policy-as-code (OPA/Kyverno), signed artifacts, SLSA Level 3 |
+| M17: Extended Testing | Done | Chaos testing, mutation testing, coverage thresholds |
+| M18: Extended CI/CD | Done | Canary deployments, automated rollback, multi-cluster promotion |
+| M19: Advanced Packaging | Done | Helm operator bundles, OLM catalog, Kustomize components |
+| M20: Advanced GitOps | Done | Progressive delivery (Argo Rollouts), blue-green/canary strategies |
+| M21: API Maturity | Done | v1 GA API, field deprecation, conversion strategy validation |
+| M22: Scale & Optimization | Done | 1000+ CR scale testing, caching optimization, rate limiting |
+| M23: Operations | Done | Operations guide, troubleshooting guide, demo scenario |
+| M24: Documentation | Done | All docs, ADRs, README, CONTRIBUTING, SECURITY, CHANGELOG |
 
 ---
 

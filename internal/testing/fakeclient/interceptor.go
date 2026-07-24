@@ -39,8 +39,8 @@ type FaultConfig struct {
 // Interceptor wraps a client.Client and injects configurable faults.
 type Interceptor struct {
 	client.Client
-	mu      sync.Mutex
-	faults  []FaultConfig
+	mu       sync.Mutex
+	faults   []FaultConfig
 	injected map[string]int // tracks injection counts per operation
 }
 

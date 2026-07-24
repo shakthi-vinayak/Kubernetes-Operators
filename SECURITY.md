@@ -2,6 +2,99 @@
 
 ## Supported Versions
 
+| Version | Supported |
+|---------|-----------|
+| 0.1.x   | Yes       |
+| < 0.1.0 | No        |
+
+## Reporting a Vulnerability
+
+We take security vulnerabilities seriously. Please report them responsibly.
+
+### Private Reporting (Preferred)
+
+Use [GitHub Security Advisories](https://github.com/shakthi-vinayak/Kubernetes-Operators/security/advisories/new)
+to report vulnerabilities privately.
+
+### Email
+
+Send details to: security@example.io (replace with actual security contact)
+
+**Do NOT open public issues for security vulnerabilities.**
+
+### What to Include
+
+- Description of the vulnerability
+- Steps to reproduce
+- Affected versions
+- Suggested fix (if any)
+
+### Response Timeline
+
+| Step | Timeline |
+|------|----------|
+| Acknowledgment | Within 48 hours |
+| Assessment | Within 7 days |
+| Fix Development | Within 30 days (critical) |
+| Public Disclosure | After fix is released |
+
+## Security Measures
+
+### Supply Chain Security
+
+- **Container scanning**: Trivy scans all Docker images for vulnerabilities
+- **Dependency scanning**: govulncheck runs on every PR
+- **Signed images**: Release images are signed with cosign
+- **SLSA Level 3**: Build provenance is generated for all releases
+
+### Runtime Security
+
+- **Non-root containers**: All containers run as non-root
+- **Read-only filesystem**: Root filesystem is read-only
+- **No privilege escalation**: `allowPrivilegeEscalation: false`
+- **Capability dropping**: All Linux capabilities are dropped
+- **Seccomp profile**: RuntimeDefault seccomp profile is used
+- **Network policies**: Default-deny ingress/egress policies
+- **Least-privilege RBAC**: Minimal permissions required
+
+### Network Security
+
+- **TLS everywhere**: Webhooks use cert-manager for TLS
+- **Network policies**: Operator namespace has restricted egress
+- **Service mesh compatible**: Works with Istio/Linkerd mTLS
+
+### Data Security
+
+- **No secrets in logs**: Sensitive data is never logged
+- **RBAC scoped**: ClusterRole limited to required resources
+- **Audit logging**: Kubernetes audit logs capture all API access
+
+## Security Updates
+
+Security patches are released as soon as possible after a vulnerability
+is confirmed. Users are notified via:
+
+- GitHub Security Advisories
+- Release notes
+- Slack channel (if configured)
+
+## Dependency Management
+
+- Dependencies are reviewed monthly
+- `go mod tidy` is run regularly
+- Vulnerable dependencies are updated within 7 days of disclosure
+- `govulncheck` runs in CI on every PR
+
+## Compliance
+
+This project follows:
+- [Kubernetes Security Best Practices](https://kubernetes.io/docs/concepts/security/)
+- [OWASP Kubernetes Security Cheat Sheet](https://owasp.org/www-project-kubernetes-top-ten/)
+- [CIS Kubernetes Benchmark](https://www.cisecurity.org/benchmark/kubernetes)
+# Security Policy
+
+## Supported Versions
+
 | Version | Supported          |
 | ------- | ------------------ |
 | 0.x.x   | :white_check_mark: |

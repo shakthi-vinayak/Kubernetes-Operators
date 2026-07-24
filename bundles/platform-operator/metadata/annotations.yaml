@@ -1,0 +1,7 @@
+packageName: platform-operator
+channels:
+  - name: stable
+    currentCSV: platform-operator.v0.1.0
+  - name: alpha
+    currentCSV: platform-operator.v0.1.0
+defaultChannel: stable

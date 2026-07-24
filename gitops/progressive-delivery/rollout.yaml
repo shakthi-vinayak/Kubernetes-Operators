@@ -1,0 +1,141 @@
+# Argo Rollout for Platform Operator
+# Uses canary strategy with automated analysis for progressive delivery.
+#
+# Prerequisites:
+#   - Argo Rollouts controller installed
+#   - Prometheus available for analysis
+#
+# Usage:
+#   kubectl apply -f gitops/progressive-delivery/rollout.yaml
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: platform-operator
+  namespace: platform-operator-system
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/part-of: platform
+spec:
+  replicas: 2
+  strategy:
+    canary:
+      # Traffic management via Istio/NGINX/Traefik
+      canaryService: platform-operator-canary
+      stableService: platform-operator-stable
+      trafficRouting:
+        plugins:
+          argoproj-labs/gatewayAPI:
+            httpRoute: platform-operator-route
+            namespace: platform-operator-system
+      steps:
+        # Step 1: Deploy canary with 5% traffic
+        - setWeight: 5
+        - pause: { duration: 2m }
+        - analysis:
+            templates:
+              - templateName: operator-health-check
+            args:
+              - name: service-name
+                value: platform-operator-canary
+        # Step 2: Increase to 20% traffic
+        - setWeight: 20
+        - pause: { duration: 5m }
+        - analysis:
+            templates:
+              - templateName: operator-health-check
+            args:
+              - name: service-name
+                value: platform-operator-canary
+        # Step 3: Increase to 50% traffic
+        - setWeight: 50
+        - pause: { duration: 5m }
+        - analysis:
+            templates:
+              - templateName: operator-error-rate
+            args:
+              - name: service-name
+                value: platform-operator-canary
+        # Step 4: Promote to 100%
+        - setWeight: 100
+      # Abort on failure
+      abortScaleDownDelaySeconds: 300
+      antiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution: {}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: platform-operator
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: platform-operator
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: platform-operator-controller-manager
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: ghcr.io/shakthi-vinayak/kubernetes-operators:latest
+          command: ["/manager"]
+          args:
+            - --leader-elect
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            - --concurrent-reconciles=3
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      terminationGracePeriodSeconds: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-operator-canary
+  namespace: platform-operator-system
+spec:
+  selector:
+    app.kubernetes.io/name: platform-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-operator-stable
+  namespace: platform-operator-system
+spec:
+  selector:
+    app.kubernetes.io/name: platform-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics

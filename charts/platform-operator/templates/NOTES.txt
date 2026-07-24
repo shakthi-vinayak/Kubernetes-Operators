@@ -1,0 +1,65 @@
+Platform Operator Helm Chart
+=============================
+
+This chart installs the Platform Operator, a production-grade Kubernetes operator
+for managing PlatformApplication custom resources.
+
+## Installation
+
+```bash
+helm repo add platform-operator https://shakthi-vinayak.github.io/Kubernetes-Operators
+helm install platform-operator platform-operator/platform-operator \
+  --namespace platform-operator-system --create-namespace
+```
+
+## Create a PlatformApplication
+
+```yaml
+apiVersion: platform.example.io/v1beta1
+kind: PlatformApplication
+metadata:
+  name: my-app
+  namespace: default
+spec:
+  image:
+    repository: nginx
+    tag: "1.25"
+  replicas:
+    min: 2
+  service:
+    port: 8080
+    type: ClusterIP
+```
+
+```bash
+kubectl apply -f my-app.yaml
+kubectl get platformapplication my-app
+kubectl get deployment,service,hpa my-app
+```
+
+## Configuration
+
+See values.yaml for all configuration options. Key settings:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| replicaCount | Operator replicas | 1 |
+| operator.leaderElect | Enable leader election | true |
+| operator.concurrentReconciles | Max concurrent workers | 1 |
+| operator.enableTracing | Enable OpenTelemetry tracing | false |
+| serviceMonitor.enabled | Create ServiceMonitor | false |
+| podDisruptionBudget.enabled | Create PDB | false |
+
+## Upgrading
+
+```bash
+helm upgrade platform-operator platform-operator/platform-operator \
+  --namespace platform-operator-system
+```
+
+## Uninstallation
+
+```bash
+helm uninstall platform-operator --namespace platform-operator-system
+kubectl delete crd platformapplications.platform.example.io
+```

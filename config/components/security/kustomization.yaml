@@ -1,0 +1,36 @@
+# Kustomize Component: Security
+# Adds NetworkPolicy and security hardening.
+# Usage: Include as a component in your kustomization.yaml:
+#   components:
+#     - ../../components/security
+
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - ../../policies/operator-networkpolicy.yaml
+
+patches:
+  - target:
+      kind: Deployment
+      name: controller-manager
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: controller-manager
+      spec:
+        template:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: manager
+                securityContext:
+                  runAsNonRoot: true
+                  readOnlyRootFilesystem: true
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]

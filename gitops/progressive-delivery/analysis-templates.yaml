@@ -1,0 +1,99 @@
+# Analysis Templates for Argo Rollouts progressive delivery.
+#
+# These templates define automated health checks that run during canary
+# deployments. If any analysis fails, the rollout is automatically aborted.
+#
+# Prerequisites:
+#   - Prometheus available at http://prometheus:9090
+#   - Argo Rollouts analysis controller configured
+---
+# Operator Health Check: Verifies the canary is healthy during rollout
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: operator-health-check
+  namespace: platform-operator-system
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: health-check
+      interval: 30s
+      successCondition: result[0] == "true"
+      failureLimit: 3
+      provider:
+        web:
+          url: "http://{{args.service-name}}.platform-operator-system.svc:8081/healthz"
+          timeoutSeconds: 5
+
+    - name: reconcile-success-rate
+      interval: 60s
+      successCondition: len(result) == 0 || result[0] >= 0.95
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sum(rate(platform_operator_reconcile_total{result="success"}[5m]))
+            /
+            sum(rate(platform_operator_reconcile_total[5m]))
+
+    - name: error-rate
+      interval: 60s
+      successCondition: len(result) == 0 || result[0] < 0.05
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sum(rate(platform_operator_reconcile_total{result="error"}[5m]))
+            /
+            (sum(rate(platform_operator_reconcile_total[5m])) + 0.001)
+---
+# Operator Error Rate: Deeper analysis for later canary stages
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: operator-error-rate
+  namespace: platform-operator-system
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: error-rate-5m
+      interval: 30s
+      successCondition: len(result) == 0 || result[0] < 0.02
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sum(rate(platform_operator_reconcile_total{result="error"}[5m]))
+            /
+            (sum(rate(platform_operator_reconcile_total[5m])) + 0.001)
+
+    - name: p95-latency
+      interval: 60s
+      successCondition: len(result) == 0 || result[0] < 2.0
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            histogram_quantile(0.95,
+              sum(rate(platform_operator_reconcile_duration_seconds_bucket[5m])) by (le)
+            )
+
+    - name: restart-count
+      initialDelay: 30s
+      interval: 60s
+      successCondition: len(result) == 0 || result[0] == 0
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sum(kube_pod_container_status_restarts_total{
+              namespace="platform-operator-system",
+              container="manager"
+            })

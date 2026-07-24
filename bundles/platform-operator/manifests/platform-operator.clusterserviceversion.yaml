@@ -1,0 +1,223 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  name: platform-operator.v0.1.0
+  namespace: placeholder
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "platform.example.io/v1beta1",
+          "kind": "PlatformApplication",
+          "metadata": {
+            "name": "sample-app",
+            "namespace": "default"
+          },
+          "spec": {
+            "image": {
+              "repository": "nginx",
+              "tag": "1.25"
+            },
+            "replicas": { "min": 2 },
+            "service": { "port": 8080, "type": "ClusterIP" }
+          }
+        }
+      ]
+    categories: "Application Runtime"
+    certified: "false"
+    description: Production-grade Kubernetes operator for declarative application management
+    repository: https://github.com/shakthi-vinayak/Kubernetes-Operators
+    containerImage: ghcr.io/shakthi-vinayak/kubernetes-operators:latest
+    support: Platform Operator Community
+spec:
+  displayName: Platform Operator
+  description: |
+    ## Platform Operator
+
+    A production-grade Kubernetes operator that manages `PlatformApplication` custom
+    resources. It automates the creation and lifecycle of Deployments, Services, HPAs,
+    HTTPRoutes (Gateway API), NetworkPolicies, PodDisruptionBudgets, and ServiceMonitors.
+
+    ### Features
+    - **Declarative Application Management**: Define your application once, the operator
+      handles Deployment, Service, HPA, routing, security, and monitoring resources.
+    - **Server-Side Apply**: Uses SSA for drift correction and conflict resolution.
+    - **Multi-API Version Support**: v1alpha1 and v1beta1 with automatic conversion.
+    - **Production Hardening**: Leader election, graceful shutdown, PDB, anti-affinity.
+    - **Observability**: Prometheus metrics, OpenTelemetry tracing, SLO alerting.
+    - **Security**: Non-root containers, least-privilege RBAC, NetworkPolicy generation.
+    - **GitOps Ready**: Argo CD and Flux-compatible with Kustomize overlays.
+
+    ### Getting Started
+    1. Install the operator (OLM or Helm)
+    2. Create a `PlatformApplication` resource
+    3. The operator generates and manages all child resources automatically
+
+    ### API Versions
+    - `v1alpha1`: Original API (deprecated, use v1beta1)
+    - `v1beta1`: Stable API with EnvFrom and PodAnnotations support (storage version)
+  maturity: beta
+  version: 0.1.0
+  replaces: ""
+  minKubeVersion: "1.28.0"
+
+  keywords:
+    - operator
+    - platform
+    - application-management
+    - deployment
+    - kubernetes
+
+  maintainers:
+    - name: Platform Operator Maintainers
+      email: platform-operator@example.io
+
+  provider:
+    name: Platform Operator Community
+    url: https://github.com/shakthi-vinayak/Kubernetes-Operators
+
+  links:
+    - name: Documentation
+      url: https://github.com/shakthi-vinayak/Kubernetes-Operators
+    - name: Source Code
+      url: https://github.com/shakthi-vinayak/Kubernetes-Operators
+
+  icon:
+    - base64data: ""
+      mediatype: image/png
+
+  installModes:
+    - type: OwnNamespace
+      supported: true
+    - type: SingleNamespace
+      supported: true
+    - type: MultiNamespace
+      supported: false
+    - type: AllNamespaces
+      supported: true
+
+  install:
+    strategy: deployment
+    spec:
+      clusterPermissions:
+        - serviceAccountName: platform-operator-controller-manager
+          rules:
+            - apiGroups: ["platform.example.io"]
+              resources: ["platformapplications"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["platform.example.io"]
+              resources: ["platformapplications/status"]
+              verbs: ["get", "update", "patch"]
+            - apiGroups: ["platform.example.io"]
+              resources: ["platformapplications/finalizers"]
+              verbs: ["update"]
+            - apiGroups: ["apps"]
+              resources: ["deployments"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: [""]
+              resources: ["services", "events"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["autoscaling"]
+              resources: ["horizontalpodautoscalers"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["gateway.networking.k8s.io"]
+              resources: ["httproutes"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["networking.k8s.io"]
+              resources: ["networkpolicies"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["policy"]
+              resources: ["poddisruptionbudgets"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["monitoring.coreos.com"]
+              resources: ["servicemonitors"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["coordination.k8s.io"]
+              resources: ["leases"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      deployments:
+        - name: platform-operator-controller-manager
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                control-plane: controller-manager
+            template:
+              metadata:
+                labels:
+                  control-plane: controller-manager
+              spec:
+                securityContext:
+                  runAsNonRoot: true
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: manager
+                    image: ghcr.io/shakthi-vinayak/kubernetes-operators:latest
+                    command: ["/manager"]
+                    args:
+                      - --leader-elect
+                      - --metrics-bind-address=:8080
+                      - --health-probe-bind-address=:8081
+                    ports:
+                      - containerPort: 8080
+                        name: metrics
+                      - containerPort: 8081
+                        name: health
+                    livenessProbe:
+                      httpGet:
+                        path: /healthz
+                        port: 8081
+                    readinessProbe:
+                      httpGet:
+                        path: /readyz
+                        port: 8081
+                    resources:
+                      limits:
+                        cpu: 500m
+                        memory: 256Mi
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                    securityContext:
+                      runAsNonRoot: true
+                      readOnlyRootFilesystem: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                serviceAccountName: platform-operator-controller-manager
+                terminationGracePeriodSeconds: 30
+
+  customresourcedefinitions:
+    owned:
+      - name: platformapplications.platform.example.io
+        displayName: PlatformApplication
+        description: Defines a platform-managed application with automated lifecycle management
+        kind: PlatformApplication
+        version: v1beta1
+        specDescriptors:
+          - path: image.repository
+            displayName: Image Repository
+            description: Container image repository
+            x-descriptors: ["urn:alm:descriptor:com.tectonic.ui:text"]
+          - path: image.tag
+            displayName: Image Tag
+            description: Container image tag
+            x-descriptors: ["urn:alm:descriptor:com.tectonic.ui:text"]
+          - path: replicas.min
+            displayName: Min Replicas
+            description: Minimum number of replicas
+            x-descriptors: ["urn:alm:descriptor:com.tectonic.ui:podCount"]
+        statusDescriptors:
+          - path: conditions
+            displayName: Conditions
+            description: Status conditions
+            x-descriptors: ["urn:alm:descriptor:io.kubernetes.conditions"]
+          - path: readyReplicas
+            displayName: Ready Replicas
+            description: Number of ready replicas
+            x-descriptors: ["urn:alm:descriptor:com.tectonic.ui:podStatuses"]
+          - path: deployedVersion
+            displayName: Deployed Version
+            description: Currently deployed image version
+            x-descriptors: ["urn:alm:descriptor:com.tectonic.ui:label"]

@@ -1,0 +1,27 @@
+# Kustomize Component: Monitoring
+# Adds ServiceMonitor, PrometheusRule, and Grafana dashboard resources.
+# Usage: Include as a component in your kustomization.yaml:
+#   components:
+#     - ../../components/monitoring
+
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - ../../monitoring
+
+patches:
+  - target:
+      kind: Deployment
+      name: controller-manager
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: controller-manager
+      spec:
+        template:
+          metadata:
+            annotations:
+              prometheus.io/scrape: "true"
+              prometheus.io/port: "8080"
