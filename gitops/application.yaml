@@ -1,0 +1,57 @@
+# Argo CD Application — deploys the Platform Operator to a cluster.
+#
+# This Application tracks the operator manifests in this repository
+# and syncs them to the target cluster. Modify the targetRevision
+# and valueFiles to point to your environment overlay.
+#
+# Prerequisites:
+#   - Argo CD installed on the target cluster
+#   - cert-manager installed (for webhook TLS)
+#
+# Usage:
+#   kubectl apply -f gitops/application.yaml -n argocd
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-operator
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/part-of: platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/shakthi-vinayak/Kubernetes-Operators.git
+    targetRevision: main
+    path: config/overlays/production
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-operator-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10
+
+  # Ignore differences in auto-managed fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

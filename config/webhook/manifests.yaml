@@ -1,0 +1,63 @@
+# Webhook service for the Platform Operator admission webhooks.
+# Requires cert-manager to inject CA bundle into the webhook configurations.
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  namespace: system
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  ports:
+    - port: 443
+      targetPort: 9443
+      protocol: TCP
+  selector:
+    control-plane: controller-manager
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+  annotations:
+    cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
+webhooks:
+  - name: mplatformapplication.kb.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: webhook-service
+        namespace: system
+        path: /mutate-platform-example-io-v1alpha1-platformapplication
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["platform.example.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["platformapplications"]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+  annotations:
+    cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
+webhooks:
+  - name: vplatformapplication.kb.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: webhook-service
+        namespace: system
+        path: /validate-platform-example-io-v1alpha1-platformapplication
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["platform.example.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["platformapplications"]

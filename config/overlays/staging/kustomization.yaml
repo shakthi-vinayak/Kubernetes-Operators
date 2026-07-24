@@ -1,0 +1,45 @@
+# Staging overlay — moderate resources, leader election, 2 replicas.
+# Usage: kubectl apply -k config/overlays/staging
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-operator-staging
+namePrefix: staging-
+
+resources:
+  - ../../default
+
+patches:
+  - target:
+      kind: Deployment
+      name: controller-manager
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: controller-manager
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+              - name: manager
+                args:
+                  - --leader-elect
+                  - --health-probe-bind-address=:8081
+                  - --metrics-bind-address=:8080
+                  - --concurrent-reconciles=2
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 256Mi
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                image: controller:staging
+
+labels:
+  - pairs:
+      environment: staging
+    includeSelectors: false

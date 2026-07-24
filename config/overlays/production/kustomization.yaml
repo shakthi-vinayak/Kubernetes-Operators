@@ -1,0 +1,56 @@
+# Production overlay — full resources, leader election, HA, monitoring.
+# Usage: kubectl apply -k config/overlays/production
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-operator-system
+
+resources:
+  - ../../default
+  - ../../monitoring
+
+patches:
+  - target:
+      kind: Deployment
+      name: controller-manager
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: controller-manager
+      spec:
+        replicas: 2
+        template:
+          metadata:
+            annotations:
+              prometheus.io/scrape: "true"
+              prometheus.io/port: "8080"
+          spec:
+            containers:
+              - name: manager
+                args:
+                  - --leader-elect
+                  - --leader-election-id=platform-operator.example.io
+                  - --health-probe-bind-address=:8081
+                  - --metrics-bind-address=:8080
+                  - --concurrent-reconciles=3
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 256Mi
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    control-plane: controller-manager
+
+labels:
+  - pairs:
+      environment: production
+    includeSelectors: false

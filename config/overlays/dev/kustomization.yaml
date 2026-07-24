@@ -1,0 +1,45 @@
+# Dev overlay — minimal resources, no leader election, single replica.
+# Usage: kubectl apply -k config/overlays/dev
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-operator-dev
+namePrefix: dev-
+
+resources:
+  - ../../default
+
+patches:
+  - target:
+      kind: Deployment
+      name: controller-manager
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: controller-manager
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: manager
+                args:
+                  - --leader-elect=false
+                  - --health-probe-bind-address=:8081
+                  - --metrics-bind-address=:8080
+                  - --concurrent-reconciles=1
+                resources:
+                  limits:
+                    cpu: 200m
+                    memory: 128Mi
+                  requests:
+                    cpu: 10m
+                    memory: 64Mi
+                image: controller:dev
+
+labels:
+  - pairs:
+      environment: dev
+    includeSelectors: false

@@ -1,0 +1,76 @@
+# Argo CD ApplicationSet — deploys the Platform Operator across
+# multiple environments (dev, staging, production) using Git directories.
+#
+# Each environment has its own Kustomize overlay under config/overlays/.
+# The ApplicationSet automatically creates one Argo CD Application per
+# environment, pointing to the correct overlay path.
+#
+# Prerequisites:
+#   - Argo CD installed with ApplicationSet controller
+#   - Cluster credentials registered in Argo CD (or in-cluster)
+#
+# Usage:
+#   kubectl apply -f gitops/applicationset.yaml -n argocd
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-operator
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/part-of: platform
+spec:
+  generators:
+    - list:
+        elements:
+          - environment: dev
+            path: config/overlays/dev
+            server: https://kubernetes.default.svc
+          - environment: staging
+            path: config/overlays/staging
+            server: https://kubernetes.default.svc
+          - environment: production
+            path: config/overlays/production
+            server: https://kubernetes.default.svc
+
+  template:
+    metadata:
+      name: "platform-operator-{{environment}}"
+      labels:
+        app.kubernetes.io/name: platform-operator
+        app.kubernetes.io/part-of: platform
+        environment: "{{environment}}"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/shakthi-vinayak/Kubernetes-Operators.git
+        targetRevision: main
+        path: "{{path}}"
+
+      destination:
+        server: "{{server}}"
+        namespace: "platform-operator-{{environment}}"
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas

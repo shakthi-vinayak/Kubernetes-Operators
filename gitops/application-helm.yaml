@@ -1,0 +1,61 @@
+# Argo CD Application using the Helm chart.
+#
+# Alternative to the Kustomize-based application.yaml.
+# Use this if you prefer Helm for managing the operator deployment.
+#
+# Usage:
+#   kubectl apply -f gitops/application-helm.yaml -n argocd
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-operator-helm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/part-of: platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/shakthi-vinayak/Kubernetes-Operators.git
+    targetRevision: main
+    path: charts/platform-operator
+    helm:
+      releaseName: platform-operator
+      valuesObject:
+        replicaCount: 2
+        image:
+          repository: ghcr.io/shakthi-vinayak/kubernetes-operators
+          tag: "latest"
+        operator:
+          leaderElect: true
+          concurrentReconciles: 3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        serviceMonitor:
+          enabled: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-operator-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
