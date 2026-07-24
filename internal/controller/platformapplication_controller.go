@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +24,7 @@ import (
 	platformerrors "github.com/example/platform-operator/internal/errors"
 	"github.com/example/platform-operator/internal/metrics"
 	"github.com/example/platform-operator/internal/status"
+	"github.com/example/platform-operator/internal/tracing"
 )
 
 const (
@@ -89,6 +92,13 @@ func (r *PlatformApplicationReconciler) Reconcile(ctx context.Context, req ctrl.
 	)
 	ctx = log.IntoContext(ctx, logger)
 	startTime := time.Now()
+
+	// Start tracing span for this reconciliation.
+	ctx, span := tracing.StartSpan(ctx, "reconcile.PlatformApplication",
+		attribute.String("reconcile.name", req.Name),
+		attribute.String("reconcile.namespace", req.Namespace),
+	)
+	defer span.End()
 
 	// Step 1: Fetch the PlatformApplication resource.
 	app := &platformv1alpha1.PlatformApplication{}
@@ -221,7 +231,16 @@ func (r *PlatformApplicationReconciler) reconcileResources(ctx context.Context, 
 
 	for _, sr := range reconcilers {
 		srStart := time.Now()
+
+		// Create a tracing span for this sub-reconciler.
+		srCtx, srSpan := tracing.StartSpan(ctx, "subreconcile."+sr.name,
+			tracing.SubReconcileAttributes(sr.name, app.Name, app.Namespace)...)
+		_ = srCtx
+
 		if err := sr.fn(); err != nil {
+			srSpan.RecordError(err)
+			srSpan.SetStatus(codes.Error, err.Error())
+			srSpan.End()
 			srDuration := time.Since(srStart)
 			classifiedErr := platformerrors.ClassifyOrWrap(err, app.Name, sr.name)
 			metrics.ObserveSubReconcile(sr.name, "error", srDuration)
@@ -235,6 +254,8 @@ func (r *PlatformApplicationReconciler) reconcileResources(ctx context.Context, 
 		}
 
 		srDuration := time.Since(srStart)
+		srSpan.SetStatus(codes.Ok, "")
+		srSpan.End()
 		metrics.ObserveSubReconcile(sr.name, "success", srDuration)
 	}
 
