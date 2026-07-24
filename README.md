@@ -199,6 +199,13 @@ This design ensures:
 | `healthChecks.readinessPath` | string | No | Readiness probe path (default: `/readyz`) |
 | `rollout.strategy` | string | No | `RollingUpdate` or `Recreate` (default: `RollingUpdate`) |
 
+#### v1beta1 Additional Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `envFrom` | `[]EnvFromSource` | No | Environment variables sourced from ConfigMaps or Secrets |
+| `podAnnotations` | `map[string]string` | No | Custom annotations applied to all generated pods |
+
 ### Status Conditions
 
 | Condition | Meaning |
@@ -271,6 +278,9 @@ The operator exposes Prometheus metrics on `:8080/metrics`:
 | `platform_operator_reconcile_errors_total` | Counter | Total reconciliation errors (labeled by error type) |
 | `platform_operator_reconcile_duration_seconds` | Histogram | Reconciliation duration distribution |
 | `platform_operator_managed_applications` | Gauge | Current number of managed PlatformApplications |
+| `platform_operator_api_call_duration_seconds` | Histogram | Duration of Kubernetes API calls (get, create, patch, delete) |
+| `platform_operator_noop_apply_total` | Counter | Apply operations where no changes were detected (semantic equality) |
+| `platform_operator_active_reconcilers` | Gauge | Number of currently active reconcile workers |
 
 ### Structured Logging
 
@@ -285,6 +295,45 @@ No secrets are ever logged.
 
 ---
 
+## Performance
+
+The operator is designed for high performance and low overhead:
+
+**Benchmark results** (Intel i5-2500, single-threaded):
+
+| Operation | Time/op | Allocations |
+|-----------|---------|-------------|
+| Build all 6 resources | ~16µs | 90 allocs |
+| Build Deployment | ~6.3µs | 37 allocs |
+| Build Service | ~1.3µs | 6 allocs |
+| Build HPA | ~1.1µs | 7 allocs |
+| Build HTTPRoute | ~2.0µs | 18 allocs |
+| Build NetworkPolicy | ~2.0µs | 13 allocs |
+| Build PDB | ~1.6µs | 9 allocs |
+
+**Scale testing** (100 concurrent reconciliations):
+
+- 100 apps reconciled in ~73ms (0.73ms/app)
+- Second pass (idempotent): detects no changes needed, minimal API writes
+
+**Profiling** is available via pprof:
+
+```bash
+# Start operator with pprof enabled
+./manager --pprof-bind-address=:6060
+
+# Profile CPU
+go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
+
+# Profile memory
+go tool pprof http://localhost:6060/debug/pprof/heap
+
+# View goroutine stacks
+curl http://localhost:6060/debug/pprof/goroutine?debug=1
+```
+
+---
+
 ## Testing
 
 The project implements a testing pyramid:
@@ -296,15 +345,24 @@ go test ./internal/... ./api/...
 # Race detection
 go test -race ./...
 
+# Benchmarks — performance testing for all sub-reconcilers
+go test -bench=. -benchmem ./internal/...
+
+# Scale tests — 100+ concurrent reconciliations
+go test -run=TestScale ./internal/controller/ -v
+
 # All tests
 go test ./... -v
 ```
 
 | Layer | Tool | Scope |
 |-------|------|-------|
-| Unit | `go test` | Resource generation, validation, label computation, condition helpers |
+| Unit | `go test` | Resource generation, validation, label computation, condition helpers, conversion |
+| Benchmarks | `go test -bench` | Sub-reconciler performance, label ops, error classification, full cycle |
+| Scale | `go test -run=TestScale` | 100-app reconciliation, idempotency verification |
 | Integration | envtest | Full reconciler against real API server, webhook behavior |
 | E2E | Kind | End-to-end: install operator, create CR, verify resources, drift test, cleanup |
+| Profiling | pprof | CPU/memory profiling via `--pprof-bind-address=:6060` |
 
 ---
 
@@ -350,39 +408,94 @@ kubectl apply -f config/samples/platform_v1alpha1_platformapplication.yaml
 ### Project Structure
 
 ```
-├── api/v1alpha1/          # CRD types, deepcopy, webhooks
-├── cmd/                   # Entry point (main.go)
+├── api/
+│   ├── v1alpha1/            # CRD types, deepcopy, webhooks, conversion (spoke)
+│   └── v1beta1/             # Evolved CRD types, deepcopy, webhooks (hub, storage version)
+├── cmd/                     # Entry point (main.go)
 ├── internal/
-│   ├── controller/        # Reconciliation logic
-│   │   └── subreconcilers/# Per-resource reconciliation (deployment, service, hpa, ...)
-│   ├── metrics/           # Prometheus metrics registration
-│   └── status/            # Status condition helpers
+│   ├── controller/          # Reconciliation logic, scale tests
+│   │   └── subreconcilers/  # Per-resource reconciliation + benchmarks
+│   ├── errors/              # Distributed systems error classification
+│   ├── metrics/             # Prometheus metrics registration
+│   └── status/              # Status condition helpers
 ├── config/
-│   ├── crd/               # CRD Kustomize manifests
-│   ├── manager/           # Operator Deployment manifest
-│   ├── rbac/              # RBAC ClusterRole and bindings
-│   ├── default/           # Kustomize overlay combining all configs
-│   └── samples/           # Example PlatformApplication resources
-├── charts/                # Helm chart (upcoming)
-├── test/                  # Integration and E2E test suites
-├── hack/                  # Development scripts and Kind config
-├── docs/                  # Architecture and operational documentation
-├── Dockerfile             # Multi-stage build with distroless
-├── Makefile               # Build, test, deploy, and development targets
-└── PROJECT                # Kubebuilder project metadata
+│   ├── crd/                 # CRD Kustomize manifests
+│   ├── manager/             # Operator Deployment manifest
+│   ├── rbac/                # RBAC ClusterRole and bindings
+│   ├── default/             # Kustomize overlay combining all configs
+│   ├── overlays/            # Environment-specific overlays (dev/staging/production)
+│   ├── webhook/             # Webhook manifests with cert-manager integration
+│   └── samples/             # Example PlatformApplication resources (v1alpha1 + v1beta1)
+├── charts/
+│   └── platform-operator/   # Helm chart with templates, values, helpers
+├── gitops/                  # Argo CD Application, ApplicationSet, Helm-based examples
+├── test/                    # Integration and E2E test suites
+├── hack/                    # Development scripts and Kind config
+├── docs/                    # Architecture and operational documentation
+├── Dockerfile               # Multi-stage build with distroless
+├── Makefile                 # Build, test, deploy, and development targets
+└── PROJECT                  # Kubebuilder project metadata
 ```
+
+---
+
+## API Versions
+
+The operator supports two API versions with automatic conversion:
+
+| Version | Status | Notes |
+|---------|--------|-------|
+| `platform.example.io/v1alpha1` | Spoke | Original API, fully supported |
+| `platform.example.io/v1beta1` | Hub (Storage) | Adds `envFrom` and `podAnnotations` fields |
+
+Conversion between versions is handled automatically by conversion webhooks. Objects are stored in the v1beta1 format (hub) and served in either version on request.
+
+**v1beta1 new fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `envFrom` | `[]EnvFromSource` | Environment variables from ConfigMaps/Secrets |
+| `podAnnotations` | `map[string]string` | Custom annotations applied to all pods |
+
+---
+
+## GitOps
+
+The operator is designed for GitOps workflows with [Argo CD](https://argo-cd.readthedocs.io/):
+
+```bash
+# Deploy with Argo CD Application (single environment)
+kubectl apply -f gitops/application.yaml
+
+# Deploy with Argo CD ApplicationSet (multi-environment rollout)
+kubectl apply -f gitops/applicationset.yaml
+
+# Deploy with Helm-based Argo CD Application
+kubectl apply -f gitops/application-helm.yaml
+```
+
+Environment-specific Kustomize overlays are provided:
+
+| Overlay | Path | Use Case |
+|---------|------|----------|
+| `dev` | `config/overlays/dev/` | Single replica, no leader election, minimal resources |
+| `staging` | `config/overlays/staging/` | 2 replicas, moderate resources |
+| `production` | `config/overlays/production/` | 2 replicas, HA, topology spread, monitoring |
 
 ---
 
 ## Installation
 
-### Kustomize
+### Kustomize Overlay
 
 ```bash
-kubectl apply -k config/default/
+# Deploy a specific environment
+kubectl apply -k config/overlays/dev/
+kubectl apply -k config/overlays/staging/
+kubectl apply -k config/overlays/production/
 ```
 
-### Helm (Upcoming)
+### Helm
 
 ```bash
 helm install platform-operator charts/platform-operator \
@@ -396,18 +509,30 @@ helm install platform-operator charts/platform-operator \
 
 | Milestone | Status | Description |
 |-----------|--------|-------------|
-| M1: Project Foundation | Done | Go module, API types, reconciliation, sub-reconcilers, webhooks, status, CI |
-| M2: API Hardening | In Progress | Unit test coverage, ADRs, documentation |
-| M3: Production Hardening | Planned | Distributed systems error handling, HA testing, concurrency, failure engineering |
-| M4: Observability | Planned | Grafana dashboards, alerting rules, runbooks |
-| M5: Tracing | Planned | Optional OpenTelemetry integration |
-| M6: Security Audit | Planned | Container scanning, SBOM, supply chain hardening |
-| M7: Testing Pyramid | Planned | envtest integration tests, Kind E2E tests |
-| M8: CI/CD | Planned | Full GitHub Actions pipeline, release automation |
-| M9: Packaging | Planned | Helm chart, Kustomize overlays |
-| M10: GitOps | Planned | Argo CD example application sets |
-| M11: API Evolution | Planned | v1beta1 API, conversion webhooks, upgrade testing |
-| M12: Scale/Perf | Planned | Scale testing, pprof profiling, optimization |
+| M1: Project Foundation | Done | Go module, Kubebuilder scaffold, Makefile, Dockerfile, linting, CI skeleton, GitHub templates |
+| M2: API Hardening | Done | Unit test coverage, ADRs, documentation |
+| M3: Production Hardening | Done | Distributed systems error handling, HA testing, concurrency, failure engineering |
+| M4: Observability | Done | Grafana dashboards, alerting rules, runbooks |
+| M5: Tracing & Security | Done | OpenTelemetry spans, container scanning, SBOM, supply chain hardening |
+| M6: Integration Testing | Done | envtest integration tests, E2E scaffolding, full CI pipeline |
+| M7: CI/CD | Done | Full GitHub Actions pipeline, release automation, multi-arch builds, Helm chart |
+| M8: Packaging & GitOps | Done | Kustomize overlays (dev/staging/prod), webhook manifests, Argo CD examples |
+| M9: API Evolution | Done | v1beta1 API with EnvFrom/PodAnnotations, hub/spoke conversion webhooks |
+| M10: Scale & Performance | Done | Benchmarks, scale testing (100-app), pprof profiling, performance metrics |
+| M11: High Availability | Planned | Leader election tuning, multi-replica deployment, failover testing |
+| M12: Concurrency | Planned | Configurable worker concurrency, race-safe shared state |
+| M13: Failure Engineering | Planned | Fault injection tests, error categorization |
+| M14: Advanced Observability | Planned | Enhanced Grafana dashboards, SLO-based alerting |
+| M15: Advanced Tracing | Planned | Per-sub-reconciler OpenTelemetry spans with correlation IDs |
+| M16: Advanced Security | Planned | Policy-as-code (OPA/Kyverno), signed artifacts, SLSA Level 3 |
+| M17: Extended Testing | Planned | Chaos testing, mutation testing, coverage thresholds |
+| M18: Extended CI/CD | Planned | Canary deployments, automated rollback, multi-cluster promotion |
+| M19: Advanced Packaging | Planned | Helm operator bundles, OLM catalog, Kustomize components |
+| M20: Advanced GitOps | Planned | Progressive delivery (Argo Rollouts), blue-green/canary strategies |
+| M21: API Maturity | Planned | v1 GA API, field deprecation, conversion strategy validation |
+| M22: Scale & Optimization | Planned | 1000+ CR scale testing, caching optimization, rate limiting |
+| M23: Operations | Planned | Operations guide, troubleshooting guide, demo scenario |
+| M24: Documentation | Planned | All docs, ADRs, README, CONTRIBUTING, SECURITY, CHANGELOG |
 
 ---
 
