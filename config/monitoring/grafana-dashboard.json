@@ -1,0 +1,158 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Managed Applications",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": "${datasource}",
+      "targets": [{ "expr": "platform_operator_managed_applications", "legendFormat": "Apps" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
+    },
+    {
+      "title": "Reconcile Rate (per min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 10, "x": 4, "y": 0 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_reconcile_total[5m])) * 60", "legendFormat": "Total" },
+        { "expr": "sum(rate(platform_operator_reconcile_total{result=\"success\"}[5m])) * 60", "legendFormat": "Success" },
+        { "expr": "sum(rate(platform_operator_reconcile_total{result=\"error\"}[5m])) * 60", "legendFormat": "Errors" }
+      ]
+    },
+    {
+      "title": "Reconcile Duration (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 0 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(platform_operator_reconcile_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(platform_operator_reconcile_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(platform_operator_reconcile_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Reconcile Success Rate",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
+      "datasource": "${datasource}",
+      "targets": [{
+        "expr": "sum(rate(platform_operator_reconcile_total{result=\"success\"}[15m])) / sum(rate(platform_operator_reconcile_total[15m])) * 100",
+        "legendFormat": "%"
+      }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 90 }, { "color": "green", "value": 99 }] } } }
+    },
+    {
+      "title": "Errors by Classification",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_reconcile_errors_total{error_class=\"transient\"}[5m])) * 60", "legendFormat": "Transient" },
+        { "expr": "sum(rate(platform_operator_reconcile_errors_total{error_class=\"permanent\"}[5m])) * 60", "legendFormat": "Permanent" },
+        { "expr": "sum(rate(platform_operator_reconcile_errors_total{error_class=\"conflict\"}[5m])) * 60", "legendFormat": "Conflict" },
+        { "expr": "sum(rate(platform_operator_reconcile_errors_total{error_class=\"unknown\"}[5m])) * 60", "legendFormat": "Unknown" }
+      ]
+    },
+    {
+      "title": "Errors by Resource Type",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_reconcile_errors_total[5m])) by (error_type) * 60", "legendFormat": "{{error_type}}" }
+      ]
+    },
+    {
+      "title": "Sub-Reconciler Operations (per min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_sub_reconcile_total{result=\"success\"}[5m])) by (resource) * 60", "legendFormat": "{{resource}} OK" },
+        { "expr": "sum(rate(platform_operator_sub_reconcile_total{result=\"error\"}[5m])) by (resource) * 60", "legendFormat": "{{resource}} Error" }
+      ]
+    },
+    {
+      "title": "Sub-Reconciler Duration (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(platform_operator_sub_reconcile_duration_seconds_bucket[5m])) by (resource, le))", "legendFormat": "{{resource}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Resource Apply Outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_resource_apply_total[5m])) by (resource, outcome) * 60", "legendFormat": "{{resource}} / {{outcome}}" }
+      ]
+    },
+    {
+      "title": "Requeue Reasons (per min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_reconcile_requeue_total[5m])) by (reason) * 60", "legendFormat": "{{reason}}" }
+      ]
+    },
+    {
+      "title": "Status Update Results",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(increase(platform_operator_status_update_total[1h])) by (result)", "legendFormat": "{{result}}" }
+      ]
+    },
+    {
+      "title": "Drift Detection Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_resource_apply_total{outcome=\"updated\"}[15m])) * 60", "legendFormat": "Updates/min (drift correction)" }
+      ],
+      "description": "High values indicate frequent drift correction — manual changes being reverted by SSA"
+    },
+    {
+      "title": "Operator Health",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "up{job=\"platform-operator\"}", "legendFormat": "Up" }
+      ],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }] } }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["kubernetes", "operator", "platform-operator"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Platform Operator",
+  "uid": "platform-operator",
+  "version": 1
+}

@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: platform-operator-metrics
+  namespace: platform-operator-system
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  namespaceSelector:
+    matchNames:
+      - platform-operator-system
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

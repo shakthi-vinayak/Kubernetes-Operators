@@ -1,0 +1,122 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-operator-alerts
+  namespace: platform-operator-system
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: platform-operator
+    role: alert-rules
+spec:
+  groups:
+    - name: platform-operator.rules
+      rules:
+        - alert: PlatformOperatorDown
+          expr: absent(up{job="platform-operator"}) == 1
+          for: 5m
+          labels:
+            severity: critical
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator is down"
+            description: >
+              No metrics scrapes from the platform-operator job for 5 minutes.
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/operator-down.md"
+
+        - alert: PlatformOperatorHighErrorRate
+          expr: |
+            (
+              sum(rate(platform_operator_reconcile_total{result="error"}[10m]))
+              /
+              sum(rate(platform_operator_reconcile_total[10m]))
+            ) > 0.25
+          for: 10m
+          labels:
+            severity: critical
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator reconcile error rate exceeds 25%"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/high-error-rate.md"
+
+        - alert: PlatformOperatorPermanentErrors
+          expr: sum(rate(platform_operator_reconcile_errors_total{error_class="permanent"}[15m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator encountering permanent errors"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/permanent-errors.md"
+
+        - alert: PlatformOperatorElevatedErrorRate
+          expr: |
+            (
+              sum(rate(platform_operator_reconcile_total{result="error"}[15m]))
+              /
+              sum(rate(platform_operator_reconcile_total[15m]))
+            ) > 0.10
+          for: 15m
+          labels:
+            severity: warning
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator reconcile error rate exceeds 10%"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/high-error-rate.md"
+
+        - alert: PlatformOperatorSlowReconciliation
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(platform_operator_reconcile_duration_seconds_bucket[10m])) by (le)
+            ) > 5
+          for: 10m
+          labels:
+            severity: warning
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator p95 reconcile duration exceeds 5s"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/slow-reconciliation.md"
+
+        - alert: PlatformOperatorStatusConflicts
+          expr: |
+            sum(rate(platform_operator_status_update_total{result="conflict"}[10m])) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator experiencing frequent status update conflicts"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/status-conflicts.md"
+
+        - alert: PlatformOperatorHighConflictRate
+          expr: |
+            sum(rate(platform_operator_reconcile_requeue_total{reason="conflict"}[10m])) > 1
+          for: 10m
+          labels:
+            severity: warning
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator experiencing high conflict requeue rate"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/status-conflicts.md"
+
+        - alert: PlatformOperatorHighDriftRate
+          expr: |
+            sum(rate(platform_operator_resource_apply_total{outcome="updated"}[15m])) * 60 > 10
+          for: 15m
+          labels:
+            severity: warning
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator correcting excessive resource drift"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/high-drift.md"
+
+        - alert: PlatformOperatorLeaderElectionFlapping
+          expr: |
+            changes(leader_election_master_status{name="platform-operator.example.io"}[10m]) > 5
+          for: 2m
+          labels:
+            severity: warning
+            component: platform-operator
+          annotations:
+            summary: "Platform Operator leader election is flapping"
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/leader-election.md"

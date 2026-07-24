@@ -1,0 +1,153 @@
+groups:
+  - name: platform-operator.rules
+    rules:
+      # ======================================================================
+      # CRITICAL ALERTS
+      # ======================================================================
+
+      # Operator is down — no scrapes for 5 minutes.
+      - alert: PlatformOperatorDown
+        expr: absent(up{job="platform-operator"}) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator is down"
+          description: >
+            No metrics scrapes from the platform-operator job for 5 minutes.
+            The operator may have crashed or is unreachable.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/operator-down.md"
+
+      # Reconcile error rate exceeds 25% for 10 minutes.
+      - alert: PlatformOperatorHighErrorRate
+        expr: |
+          (
+            sum(rate(platform_operator_reconcile_total{result="error"}[10m]))
+            /
+            sum(rate(platform_operator_reconcile_total[10m]))
+          ) > 0.25
+        for: 10m
+        labels:
+          severity: critical
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator reconcile error rate exceeds 25%"
+          description: >
+            {{ $value | humanizePercentage }} of reconciliation attempts are failing.
+            Check operator logs and the errors-by-classification panel for root cause.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/high-error-rate.md"
+
+      # Permanent errors detected — require manual intervention.
+      - alert: PlatformOperatorPermanentErrors
+        expr: sum(rate(platform_operator_reconcile_errors_total{error_class="permanent"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator encountering permanent errors"
+          description: >
+            Permanent reconciliation errors detected (invalid config, RBAC denied, missing CRD).
+            These will not self-heal and require manual intervention.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/permanent-errors.md"
+
+      # ======================================================================
+      # WARNING ALERTS
+      # ======================================================================
+
+      # Reconcile error rate exceeds 10% for 15 minutes.
+      - alert: PlatformOperatorElevatedErrorRate
+        expr: |
+          (
+            sum(rate(platform_operator_reconcile_total{result="error"}[15m]))
+            /
+            sum(rate(platform_operator_reconcile_total[15m]))
+          ) > 0.10
+        for: 15m
+        labels:
+          severity: warning
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator reconcile error rate exceeds 10%"
+          description: >
+            {{ $value | humanizePercentage }} of reconciliation attempts are failing.
+            This may indicate transient API server issues or network problems.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/high-error-rate.md"
+
+      # Reconcile duration p95 exceeds 5 seconds for 10 minutes.
+      - alert: PlatformOperatorSlowReconciliation
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(platform_operator_reconcile_duration_seconds_bucket[10m])) by (le)
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator p95 reconcile duration exceeds 5s"
+          description: >
+            p95 reconciliation duration is {{ $value | humanizeDuration }}.
+            This may indicate API server latency, high resource count, or contention.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/slow-reconciliation.md"
+
+      # High rate of status update conflicts.
+      - alert: PlatformOperatorStatusConflicts
+        expr: |
+          sum(rate(platform_operator_status_update_total{result="conflict"}[10m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator experiencing frequent status update conflicts"
+          description: >
+            {{ $value | humanize }} status update conflicts per second.
+            This may indicate multiple controllers fighting over the same resource.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/status-conflicts.md"
+
+      # Frequent conflict retries on SSA apply.
+      - alert: PlatformOperatorHighConflictRate
+        expr: |
+          sum(rate(platform_operator_reconcile_requeue_total{reason="conflict"}[10m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator experiencing high conflict requeue rate"
+          description: >
+            {{ $value | humanize }} conflict requeues per second.
+            Another controller may be writing to the same managed resources.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/status-conflicts.md"
+
+      # Excessive drift correction — manual changes being reverted.
+      - alert: PlatformOperatorHighDriftRate
+        expr: |
+          sum(rate(platform_operator_resource_apply_total{outcome="updated"}[15m])) * 60 > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator correcting excessive resource drift"
+          description: >
+            {{ $value | humanize }} resource updates per minute due to drift correction.
+            Someone or something is manually modifying managed resources.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/high-drift.md"
+
+      # Leader election may be flapping (no leader for 2+ minutes).
+      - alert: PlatformOperatorLeaderElectionFlapping
+        expr: |
+          changes(leader_election_master_status{name="platform-operator.example.io"}[10m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          component: platform-operator
+        annotations:
+          summary: "Platform Operator leader election is flapping"
+          description: >
+            Leader election changed {{ $value }} times in 10 minutes.
+            This may indicate network instability between operator replicas.
+          runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/leader-election.md"
