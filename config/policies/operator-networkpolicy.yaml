@@ -1,0 +1,61 @@
+# ======================================================================
+# NetworkPolicy for Platform Operator namespace
+# Restricts ingress and egress traffic for the operator deployment.
+# ======================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-operator-controller
+  namespace: platform-operator-system
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow Prometheus scraping on metrics port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-operator-system
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow health probe access.
+    - ports:
+        - protocol: TCP
+          port: 8081
+    # Allow webhook traffic from the API server.
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9443
+  egress:
+    # Allow DNS resolution.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow API server communication (Kubernetes API).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32  # Block cloud metadata endpoint
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443

@@ -1,0 +1,163 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-operator-slo
+  namespace: platform-operator-system
+  labels:
+    app.kubernetes.io/name: platform-operator
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: platform-operator
+    role: slo-rules
+spec:
+  groups:
+    # ======================================================================
+    # SLO: Reconciliation Availability (99.9% target)
+    # ======================================================================
+    - name: platform-operator.slo.availability
+      interval: 30s
+      rules:
+        # Recording rule: reconcile success rate over 5m window.
+        - record: platform_operator:slo_reconcile_success_rate:5m
+          expr: |
+            sum(rate(platform_operator_reconcile_total{result="success"}[5m]))
+            /
+            sum(rate(platform_operator_reconcile_total[5m]))
+
+        # Recording rule: reconcile success rate over 30m window.
+        - record: platform_operator:slo_reconcile_success_rate:30m
+          expr: |
+            sum(rate(platform_operator_reconcile_total{result="success"}[30m]))
+            /
+            sum(rate(platform_operator_reconcile_total[30m]))
+
+        # Recording rule: reconcile success rate over 1h window.
+        - record: platform_operator:slo_reconcile_success_rate:1h
+          expr: |
+            sum(rate(platform_operator_reconcile_total{result="success"}[1h]))
+            /
+            sum(rate(platform_operator_reconcile_total[1h]))
+
+        # Recording rule: reconcile success rate over 6h window.
+        - record: platform_operator:slo_reconcile_success_rate:6h
+          expr: |
+            sum(rate(platform_operator_reconcile_total{result="success"}[6h]))
+            /
+            sum(rate(platform_operator_reconcile_total[6h]))
+
+        # Recording rule: reconcile success rate over 1d window.
+        - record: platform_operator:slo_reconcile_success_rate:1d
+          expr: |
+            sum(rate(platform_operator_reconcile_total{result="success"}[1d]))
+            /
+            sum(rate(platform_operator_reconcile_total[1d]))
+
+        # Recording rule: reconcile success rate over 3d window.
+        - record: platform_operator:slo_reconcile_success_rate:3d
+          expr: |
+            sum(rate(platform_operator_reconcile_total{result="success"}[3d]))
+            /
+            sum(rate(platform_operator_reconcile_total[3d]))
+
+    # ======================================================================
+    # SLO: Reconciliation Latency (p95 < 2s)
+    # ======================================================================
+    - name: platform-operator.slo.latency
+      interval: 30s
+      rules:
+        # Recording rule: p95 reconcile duration over 5m.
+        - record: platform_operator:slo_reconcile_latency_p95:5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(platform_operator_reconcile_duration_seconds_bucket[5m])) by (le)
+            )
+
+        # Recording rule: p95 reconcile duration over 1h.
+        - record: platform_operator:slo_reconcile_latency_p95:1h
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(platform_operator_reconcile_duration_seconds_bucket[1h])) by (le)
+            )
+
+    # ======================================================================
+    # SLO: Multi-Window Burn Rate Alerts (Google SRE approach)
+    # ======================================================================
+    - name: platform-operator.slo.alerts
+      rules:
+        # CRITICAL: 14.4x burn rate over 1h (consumes 2% of error budget in 1h).
+        # For 99.9% SLO: error budget = 0.1%, 14.4x burn = 1.44% error rate.
+        - alert: PlatformOperatorSLOAvailabilityCritical
+          expr: |
+            (
+              platform_operator:slo_reconcile_success_rate:5m < (1 - 14.4 * 0.001)
+              and
+              platform_operator:slo_reconcile_success_rate:1h < (1 - 14.4 * 0.001)
+            )
+          for: 2m
+          labels:
+            severity: critical
+            component: platform-operator
+            slo: availability
+          annotations:
+            summary: "Platform Operator SLO: availability burn rate critical (14.4x)"
+            description: >
+              Reconcile success rate is {{ $value | humanizePercentage }} over 5m and 1h windows.
+              This will consume 2% of the monthly error budget in 1 hour.
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/slo-availability.md"
+
+        # WARNING: 6x burn rate over 6h (consumes 5% of error budget in 6h).
+        - alert: PlatformOperatorSLOAvailabilityWarning
+          expr: |
+            (
+              platform_operator:slo_reconcile_success_rate:30m < (1 - 6 * 0.001)
+              and
+              platform_operator:slo_reconcile_success_rate:6h < (1 - 6 * 0.001)
+            )
+          for: 15m
+          labels:
+            severity: warning
+            component: platform-operator
+            slo: availability
+          annotations:
+            summary: "Platform Operator SLO: availability burn rate elevated (6x)"
+            description: >
+              Reconcile success rate is {{ $value | humanizePercentage }} over 30m and 6h windows.
+              This will consume 5% of the monthly error budget in 6 hours.
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/slo-availability.md"
+
+        # PAGE: 1x burn rate over 3d (consumes entire error budget in 30 days).
+        - alert: PlatformOperatorSLOAvailabilityBudgetRisk
+          expr: |
+            (
+              platform_operator:slo_reconcile_success_rate:1d < (1 - 1 * 0.001)
+              and
+              platform_operator:slo_reconcile_success_rate:3d < (1 - 1 * 0.001)
+            )
+          for: 1h
+          labels:
+            severity: info
+            component: platform-operator
+            slo: availability
+          annotations:
+            summary: "Platform Operator SLO: error budget at risk (1x burn rate)"
+            description: >
+              Reconcile success rate is {{ $value | humanizePercentage }} over 1d and 3d windows.
+              At this rate, the monthly error budget will be fully consumed.
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/slo-availability.md"
+
+        # Latency SLO: p95 > 2s for 15m.
+        - alert: PlatformOperatorSLOLatencyBreach
+          expr: |
+            platform_operator:slo_reconcile_latency_p95:5m > 2
+            and
+            platform_operator:slo_reconcile_latency_p95:1h > 2
+          for: 15m
+          labels:
+            severity: warning
+            component: platform-operator
+            slo: latency
+          annotations:
+            summary: "Platform Operator SLO: p95 latency exceeds 2s target"
+            description: >
+              p95 reconcile duration is {{ $value | humanizeDuration }}.
+              Target is < 2s. Check API server latency and sub-reconciler performance.
+            runbook_url: "https://github.com/shakthi-vinayak/Kubernetes-Operators/blob/main/docs/runbooks/slo-latency.md"

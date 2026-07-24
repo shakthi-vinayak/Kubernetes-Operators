@@ -1,0 +1,121 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "SLO: Availability (99.9%)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": "${datasource}",
+      "targets": [{ "expr": "platform_operator:slo_reconcile_success_rate:1d * 100", "legendFormat": "%" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 99, "max": 100, "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 99.5 }, { "color": "green", "value": 99.9 }] } } }
+    },
+    {
+      "title": "SLO: Latency p95 (< 2s)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": "${datasource}",
+      "targets": [{ "expr": "platform_operator:slo_reconcile_latency_p95:1h", "legendFormat": "p95" }],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0, "max": 5, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1.5 }, { "color": "red", "value": 2 }] } } }
+    },
+    {
+      "title": "Error Budget Remaining",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": "${datasource}",
+      "targets": [{ "expr": "((platform_operator:slo_reconcile_success_rate:3d - 0.999) / (1 - 0.999)) * 100", "legendFormat": "%" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 20 }, { "color": "green", "value": 50 }] } } },
+      "description": "Percentage of monthly error budget remaining"
+    },
+    {
+      "title": "Active Reconcilers",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": "${datasource}",
+      "targets": [{ "expr": "platform_operator_active_reconcilers", "legendFormat": "Workers" }]
+    },
+    {
+      "title": "Availability by Window",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "platform_operator:slo_reconcile_success_rate:5m * 100", "legendFormat": "5m" },
+        { "expr": "platform_operator:slo_reconcile_success_rate:30m * 100", "legendFormat": "30m" },
+        { "expr": "platform_operator:slo_reconcile_success_rate:1h * 100", "legendFormat": "1h" },
+        { "expr": "platform_operator:slo_reconcile_success_rate:6h * 100", "legendFormat": "6h" },
+        { "expr": "platform_operator:slo_reconcile_success_rate:1d * 100", "legendFormat": "1d" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 98, "max": 100, "custom": { "thresholdsStyle": { "mode": "line" } } }, "overrides": [{ "matcher": { "id": "byName", "options": "SLO Target" }, "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }] }] }
+    },
+    {
+      "title": "Latency by Window",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "platform_operator:slo_reconcile_latency_p95:5m", "legendFormat": "p95 (5m)" },
+        { "expr": "platform_operator:slo_reconcile_latency_p95:1h", "legendFormat": "p95 (1h)" },
+        { "expr": "2", "legendFormat": "SLO Target (2s)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "No-Op Apply Rate (Optimization)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(platform_operator_noop_apply_total[5m])) by (resource) * 60", "legendFormat": "{{resource}}" }
+      ],
+      "description": "Higher values indicate effective semantic equality checks (fewer unnecessary API writes)"
+    },
+    {
+      "title": "API Call Latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(platform_operator_api_call_duration_seconds_bucket[5m])) by (operation, le))", "legendFormat": "{{operation}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Burn Rate (Multi-Window)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "(1 - platform_operator:slo_reconcile_success_rate:5m) / 0.001", "legendFormat": "5m burn rate" },
+        { "expr": "(1 - platform_operator:slo_reconcile_success_rate:1h) / 0.001", "legendFormat": "1h burn rate" },
+        { "expr": "(1 - platform_operator:slo_reconcile_success_rate:6h) / 0.001", "legendFormat": "6h burn rate" },
+        { "expr": "14.4", "legendFormat": "Critical threshold (14.4x)" },
+        { "expr": "6", "legendFormat": "Warning threshold (6x)" }
+      ],
+      "description": "Burn rate relative to SLO error budget. 1x = consuming budget at expected rate. >14.4x = critical alert.",
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["kubernetes", "operator", "slo", "platform-operator"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Platform Operator — SLO Dashboard",
+  "uid": "platform-operator-slo",
+  "version": 1
+}

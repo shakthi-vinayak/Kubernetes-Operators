@@ -116,6 +116,25 @@ var (
 			Help: "Number of currently active reconcile workers",
 		},
 	)
+
+	// WorkQueueDepth tracks the depth of the reconcile work queue.
+	WorkQueueDepth = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "platform_operator_workqueue_depth",
+			Help: "Current depth of the reconcile work queue",
+		},
+		[]string{"name"},
+	)
+
+	// WorkQueueLatency tracks how long items wait in the queue.
+	WorkQueueLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "platform_operator_workqueue_latency_seconds",
+			Help:    "Time items spend in the work queue before processing",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0},
+		},
+		[]string{"name"},
+	)
 )
 
 func init() {
@@ -132,6 +151,8 @@ func init() {
 		APICallDurationSeconds,
 		NoOpApplyTotal,
 		ActiveReconcilers,
+		WorkQueueDepth,
+		WorkQueueLatency,
 	)
 }
 

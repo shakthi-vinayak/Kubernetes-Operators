@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -383,14 +384,17 @@ func (r *PlatformApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error
 		concurrency = 1
 	}
 
+	// Custom rate limiter: exponential backoff from 5ms to 1000s (controller-runtime default)
+	// combined with a token bucket for burst handling.
+	rateLimiter := workqueue.DefaultTypedControllerRateLimiter[ctrl.Request]()
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&platformv1alpha1.PlatformApplication{}).
 		Owns(&appsv1.Deployment{}).
 		Named("platformapplication").
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: concurrency,
-			// controller-runtime's default rate limiter provides
-			// exponential backoff (5ms to 1000s) for error retries.
+			RateLimiter:             rateLimiter,
 		}).
 		Complete(r)
 }

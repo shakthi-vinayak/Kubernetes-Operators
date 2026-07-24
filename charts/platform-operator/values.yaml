@@ -106,3 +106,24 @@ serviceMonitor:
 crds:
   # -- Install CRDs with the chart
   install: true
+
+# -- Pod Disruption Budget for HA
+podDisruptionBudget:
+  # -- Create a PodDisruptionBudget
+  enabled: false
+  # -- Minimum available replicas (set to 1 for HA with 2+ replicas)
+  minAvailable: 1
+  # -- Maximum unavailable replicas (alternative to minAvailable)
+  maxUnavailable: null
+
+# -- Startup probe configuration
+startupProbe:
+  # -- Enable startup probe
+  enabled: true
+  # -- Failure threshold before restarting
+  failureThreshold: 30
+  # -- Period between probes
+  periodSeconds: 2
+
+# -- Termination grace period (seconds)
+terminationGracePeriodSeconds: 30

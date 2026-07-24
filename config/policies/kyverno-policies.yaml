@@ -1,0 +1,155 @@
+# ======================================================================
+# Kyverno Policies for Platform Operator
+# These policies enforce pod security standards and image verification.
+#
+# Prerequisites: Kyverno v1.10+ installed in the cluster.
+# ======================================================================
+
+# Policy: Require non-root containers (Pod Security Standard: Restricted).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: platform-operator-require-non-root
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy.kyverno.io/category: Pod Security Standards (Restricted)
+  annotations:
+    policies.kyverno.io/title: Require Non-Root Containers
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >
+      Ensures the platform operator and all managed workloads run as non-root
+      with read-only root filesystem and dropped capabilities.
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: require-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - platform-operator-system
+      validate:
+        message: "Running as non-root is required. Set securityContext.runAsNonRoot to true."
+        pattern:
+          spec:
+            template:
+              spec:
+                securityContext:
+                  runAsNonRoot: true
+                containers:
+                  - securityContext:
+                      runAsNonRoot: true
+                      readOnlyRootFilesystem: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop:
+                          - ALL
+---
+# Policy: Verify image source (only allow GHCR images).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: platform-operator-verify-image-source
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy.kyverno.io/category: Supply Chain Security
+  annotations:
+    policies.kyverno.io/title: Verify Image Source
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >
+      Ensures operator images are sourced from approved registries only.
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: verify-image-registry
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - platform-operator-system
+      validate:
+        message: "Images must come from ghcr.io registry."
+        pattern:
+          spec:
+            template:
+              spec:
+                containers:
+                  - image: "ghcr.io/*"
+---
+# Policy: Require resource limits on all operator containers.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: platform-operator-require-resource-limits
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy.kyverno.io/category: Best Practices
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >
+      Ensures all containers in the operator namespace have resource
+      requests and limits to prevent resource exhaustion.
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: require-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - platform-operator-system
+      validate:
+        message: "CPU and memory requests/limits are required."
+        pattern:
+          spec:
+            template:
+              spec:
+                containers:
+                  - resources:
+                      requests:
+                        memory: "?*"
+                        cpu: "?*"
+                      limits:
+                        memory: "?*"
+---
+# Policy: Disallow privileged containers.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: platform-operator-disallow-privileged
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy.kyverno.io/category: Pod Security Standards (Baseline)
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >
+      Privileged mode disables all security controls. This policy ensures
+      no container runs in privileged mode.
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: deny-privileged
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - platform-operator-system
+      validate:
+        message: "Privileged containers are not allowed."
+        pattern:
+          spec:
+            template:
+              spec:
+                containers:
+                  - =(securityContext):
+                      =(privileged): "false"

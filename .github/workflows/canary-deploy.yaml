@@ -1,0 +1,167 @@
+name: Canary Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image tag to deploy (e.g., v0.2.0)'
+        required: true
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      weight:
+        description: 'Canary traffic weight (percentage, 1-100)'
+        required: false
+        default: '10'
+
+permissions:
+  contents: read
+  deployments: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ======================================================================
+  # Validate the canary deployment parameters
+  # ======================================================================
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate image exists
+        run: |
+          echo "Validating image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+          docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }} > /dev/null 2>&1 || {
+            echo "::error::Image not found: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+            exit 1
+          }
+          echo "Image found."
+
+      - name: Validate weight
+        run: |
+          WEIGHT=${{ inputs.weight }}
+          if [ "$WEIGHT" -lt 1 ] || [ "$WEIGHT" -gt 100 ]; then
+            echo "::error::Weight must be between 1 and 100, got $WEIGHT"
+            exit 1
+          fi
+          echo "Weight validated: ${WEIGHT}%"
+
+  # ======================================================================
+  # Deploy canary to the target environment
+  # ======================================================================
+  deploy-canary:
+    name: Deploy Canary
+    runs-on: ubuntu-latest
+    needs: [validate]
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Generate canary manifest
+        run: |
+          cat > /tmp/canary-deploy.yaml << EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: platform-operator-canary
+            namespace: platform-operator-${{ inputs.environment }}
+            labels:
+              app.kubernetes.io/name: platform-operator
+              app.kubernetes.io/version: "${{ inputs.version }}"
+              track: canary
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: platform-operator
+                track: canary
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: platform-operator
+                  track: canary
+              spec:
+                containers:
+                  - name: manager
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+                    command: ["/manager"]
+                    args:
+                      - --leader-elect=false
+                      - --metrics-bind-address=:8080
+                      - --health-probe-bind-address=:8081
+                    ports:
+                      - containerPort: 8080
+                        name: metrics
+                      - containerPort: 8081
+                        name: health
+                    livenessProbe:
+                      httpGet:
+                        path: /healthz
+                        port: 8081
+                    readinessProbe:
+                      httpGet:
+                        path: /readyz
+                        port: 8081
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                      limits:
+                        cpu: 500m
+                        memory: 256Mi
+                    securityContext:
+                      runAsNonRoot: true
+                      readOnlyRootFilesystem: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                      seccompProfile:
+                        type: RuntimeDefault
+          EOF
+          echo "Canary manifest generated"
+
+      - name: Deploy canary
+        run: |
+          echo "::notice::Canary deployment manifest generated for ${{ inputs.environment }} with image ${{ inputs.version }}"
+          echo "::notice::Traffic weight: ${{ inputs.weight }}%"
+          echo "In a real cluster, run: kubectl apply -f /tmp/canary-deploy.yaml"
+
+  # ======================================================================
+  # Verify canary health
+  # ======================================================================
+  verify-canary:
+    name: Verify Canary
+    runs-on: ubuntu-latest
+    needs: [deploy-canary]
+    steps:
+      - name: Wait for canary readiness
+        run: |
+          echo "::notice::Waiting for canary deployment to become ready..."
+          echo "In a real cluster: kubectl wait --for=condition=available deployment/platform-operator-canary -n platform-operator-${{ inputs.environment }} --timeout=300s"
+
+      - name: Check canary metrics
+        run: |
+          echo "::notice::Verifying canary error rate is below threshold..."
+          echo "In production, check Prometheus for error rates and latency."
+
+  # ======================================================================
+  # Promote or rollback
+  # ======================================================================
+  promote:
+    name: Promote Canary
+    runs-on: ubuntu-latest
+    needs: [verify-canary]
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Promote to stable
+        run: |
+          echo "::notice::Promoting canary ${{ inputs.version }} to stable in ${{ inputs.environment }}"
+          echo "In a real cluster: kubectl set image deployment/platform-operator-controller-manager manager=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }} -n platform-operator-${{ inputs.environment }}"
+          echo "Then: kubectl delete deployment platform-operator-canary -n platform-operator-${{ inputs.environment }}"

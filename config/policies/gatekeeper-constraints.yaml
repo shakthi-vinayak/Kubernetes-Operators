@@ -1,0 +1,185 @@
+# ======================================================================
+# OPA Gatekeeper Constraints for Platform Operator
+# These policies enforce security best practices on the operator
+# deployment and the resources it manages.
+#
+# Prerequisites: OPA Gatekeeper v3.x installed in the cluster.
+# ======================================================================
+
+# Constraint Template: Require non-root containers.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirenonroot
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy: security
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireNonRoot
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirenonroot
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.template.spec.containers[_]
+          not container.securityContext.runAsNonRoot
+          msg := sprintf("Container %v must set securityContext.runAsNonRoot: true", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.template.spec.containers[_]
+          container.securityContext.runAsNonRoot == false
+          msg := sprintf("Container %v must not run as root", [container.name])
+        }
+---
+# Constraint: Enforce non-root on all operator deployments.
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireNonRoot
+metadata:
+  name: platform-operator-require-non-root
+  labels:
+    app.kubernetes.io/name: platform-operator
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces:
+      - platform-operator-system
+---
+# Constraint Template: Require read-only root filesystem.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirereadonlyrootfs
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy: security
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireReadOnlyRootFs
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirereadonlyrootfs
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.template.spec.containers[_]
+          not container.securityContext.readOnlyRootFilesystem
+          msg := sprintf("Container %v must set readOnlyRootFilesystem: true", [container.name])
+        }
+---
+# Constraint: Enforce read-only root filesystem.
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireReadOnlyRootFs
+metadata:
+  name: platform-operator-require-readonly-rootfs
+  labels:
+    app.kubernetes.io/name: platform-operator
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces:
+      - platform-operator-system
+---
+# Constraint Template: Require dropped capabilities.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdropallcapabilities
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy: security
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDropAllCapabilities
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdropallcapabilities
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.template.spec.containers[_]
+          not container.securityContext.capabilities
+          msg := sprintf("Container %v must drop ALL capabilities", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.template.spec.containers[_]
+          not contains(container.securityContext.capabilities.drop, "ALL")
+          msg := sprintf("Container %v must include ALL in capabilities.drop", [container.name])
+        }
+
+        contains(arr, elem) {
+          arr[_] == elem
+        }
+---
+# Constraint: Enforce dropped capabilities.
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDropAllCapabilities
+metadata:
+  name: platform-operator-drop-all-caps
+  labels:
+    app.kubernetes.io/name: platform-operator
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces:
+      - platform-operator-system
+---
+# Constraint Template: Require resource limits.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequireresourcelimits
+  labels:
+    app.kubernetes.io/name: platform-operator
+    policy: security
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireResourceLimits
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequireresourcelimits
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.template.spec.containers[_]
+          not container.resources.limits
+          msg := sprintf("Container %v must have resource limits", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.template.spec.containers[_]
+          not container.resources.limits.memory
+          msg := sprintf("Container %v must have memory limits", [container.name])
+        }
+---
+# Constraint: Enforce resource limits.
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireResourceLimits
+metadata:
+  name: platform-operator-require-limits
+  labels:
+    app.kubernetes.io/name: platform-operator
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces:
+      - platform-operator-system

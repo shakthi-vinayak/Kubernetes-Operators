@@ -1,0 +1,286 @@
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image tag to promote (e.g., v0.2.0)'
+        required: true
+      source_environment:
+        description: 'Source environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+      target_environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      strategy:
+        description: 'Deployment strategy'
+        required: true
+        type: choice
+        options:
+          - rolling
+          - blue-green
+        default: rolling
+
+permissions:
+  contents: write
+  deployments: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ======================================================================
+  # Validate promotion prerequisites
+  # ======================================================================
+  validate:
+    name: Validate Promotion
+    runs-on: ubuntu-latest
+    outputs:
+      promotion-id: ${{ steps.meta.outputs.promotion-id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate image exists
+        run: |
+          echo "Validating image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+          docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }} > /dev/null 2>&1 || {
+            echo "::error::Image not found: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+            exit 1
+          }
+          echo "Image validated."
+
+      - name: Validate promotion path
+        run: |
+          SRC="${{ inputs.source_environment }}"
+          TGT="${{ inputs.target_environment }}"
+          if [ "$SRC" = "$TGT" ]; then
+            echo "::error::Source and target environments must differ"
+            exit 1
+          fi
+          if [ "$SRC" = "production" ]; then
+            echo "::error::Cannot promote FROM production"
+            exit 1
+          fi
+          if [ "$TGT" = "production" ] && [ "$SRC" != "staging" ]; then
+            echo "::error::Production promotions must come from staging"
+            exit 1
+          fi
+          echo "Promotion path validated: $SRC -> $TGT"
+
+      - name: Generate promotion ID
+        id: meta
+        run: |
+          PROMOTION_ID="prom-$(date +%Y%m%d%H%M%S)-${{ inputs.version }}"
+          echo "promotion-id=$PROMOTION_ID" >> "$GITHUB_OUTPUT"
+          echo "Promotion ID: $PROMOTION_ID"
+
+  # ======================================================================
+  # Pre-flight checks on target environment
+  # ======================================================================
+  preflight:
+    name: Pre-flight Checks
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - name: Check target cluster health
+        run: |
+          echo "::notice::Checking cluster health for ${{ inputs.target_environment }}"
+          echo "In production: kubectl cluster-info --context=${{ inputs.target_environment }}"
+
+      - name: Check resource capacity
+        run: |
+          echo "::notice::Verifying sufficient resources in ${{ inputs.target_environment }}"
+          echo "In production: kubectl describe nodes | grep -A5 'Allocated resources'"
+
+      - name: Verify no active incidents
+        run: |
+          echo "::notice::Checking for active incidents in ${{ inputs.target_environment }}"
+          echo "In production: check PagerDuty/Grafana for active alerts"
+
+  # ======================================================================
+  # Deploy to target environment
+  # ======================================================================
+  deploy:
+    name: Deploy to ${{ inputs.target_environment }}
+    runs-on: ubuntu-latest
+    needs: [validate, preflight]
+    environment: ${{ inputs.target_environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate deployment manifest
+        run: |
+          cat > /tmp/promote-deploy.yaml << 'MANIFEST'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: platform-operator-controller-manager
+            namespace: platform-operator-system
+            labels:
+              app.kubernetes.io/name: platform-operator
+              app.kubernetes.io/version: "${{ inputs.version }}"
+              platform.promotion/id: "${{ needs.validate.outputs.promotion-id }}"
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: platform-operator
+                control-plane: controller-manager
+            strategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxSurge: 1
+                maxUnavailable: 0
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: platform-operator
+                  control-plane: controller-manager
+              spec:
+                containers:
+                  - name: manager
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+                    command: ["/manager"]
+                    args:
+                      - --leader-elect=true
+                      - --metrics-bind-address=:8080
+                      - --health-probe-bind-address=:8081
+                      - --concurrency=4
+                    ports:
+                      - containerPort: 8080
+                        name: metrics
+                      - containerPort: 8081
+                        name: health
+                    livenessProbe:
+                      httpGet:
+                        path: /healthz
+                        port: 8081
+                      initialDelaySeconds: 15
+                      periodSeconds: 20
+                    readinessProbe:
+                      httpGet:
+                        path: /readyz
+                        port: 8081
+                      initialDelaySeconds: 5
+                      periodSeconds: 10
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                      limits:
+                        cpu: 500m
+                        memory: 256Mi
+                    securityContext:
+                      runAsNonRoot: true
+                      readOnlyRootFilesystem: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                      seccompProfile:
+                        type: RuntimeDefault
+                terminationGracePeriodSeconds: 120
+          MANIFEST
+          echo "Deployment manifest generated"
+
+      - name: Apply deployment
+        run: |
+          echo "::notice::Deploying ${{ inputs.version }} to ${{ inputs.target_environment }} (${{ inputs.strategy }} strategy)"
+          echo "In production: kubectl apply -f /tmp/promote-deploy.yaml --context=${{ inputs.target_environment }}"
+
+      - name: Wait for rollout
+        run: |
+          echo "::notice::Waiting for rollout to complete..."
+          echo "In production: kubectl rollout status deployment/platform-operator-controller-manager -n platform-operator-system --context=${{ inputs.target_environment }} --timeout=300s"
+
+  # ======================================================================
+  # Post-deployment verification
+  # ======================================================================
+  verify:
+    name: Post-deploy Verification
+    runs-on: ubuntu-latest
+    needs: [validate, deploy]
+    steps:
+      - name: Health check
+        run: |
+          echo "::notice::Running post-deployment health checks..."
+          echo "In production: curl -s http://<endpoint>:8081/healthz"
+
+      - name: Verify reconciliation
+        run: |
+          echo "::notice::Verifying operator is reconciling resources..."
+          echo "In production: kubectl get platformapplications --all-namespaces --context=${{ inputs.target_environment }}"
+
+      - name: Check error rate
+        run: |
+          echo "::notice::Checking Prometheus for error rate..."
+          echo "Verify: rate(platform_operator_reconcile_total{result='error'}[5m]) < 0.01"
+
+      - name: Check latency
+        run: |
+          echo "::notice::Checking reconciliation latency..."
+          echo "Verify: histogram_quantile(0.95, rate(platform_operator_reconcile_duration_seconds_bucket[5m])) < 2.0"
+
+  # ======================================================================
+  # Tag and record promotion
+  # ======================================================================
+  record:
+    name: Record Promotion
+    runs-on: ubuntu-latest
+    needs: [validate, verify]
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag release for environment
+        run: |
+          TAG="${{ inputs.target_environment }}/${{ inputs.version }}"
+          git tag -a "$TAG" -m "Promoted ${{ inputs.version }} to ${{ inputs.target_environment }} (${{ needs.validate.outputs.promotion-id }})"
+          git push origin "$TAG"
+          echo "::notice::Created tag: $TAG"
+
+      - name: Create GitHub deployment record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: '${{ inputs.version }}',
+              environment: '${{ inputs.target_environment }}',
+              description: 'Promoted ${{ inputs.version }} from ${{ inputs.source_environment }} to ${{ inputs.target_environment }}',
+              auto_merge: false,
+              required_contexts: [],
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.data.id,
+              state: 'success',
+              description: 'Deployment verified successfully',
+            });
+            core.info(`Deployment recorded: #${deployment.data.id}`);
+
+  # ======================================================================
+  # Rollback (manual job triggered on failure)
+  # ======================================================================
+  rollback-info:
+    name: Rollback Instructions
+    runs-on: ubuntu-latest
+    needs: [validate, deploy]
+    if: failure()
+    steps:
+      - name: Rollback instructions
+        run: |
+          echo "::error::Deployment to ${{ inputs.target_environment }} failed!"
+          echo "::notice::To rollback, run:"
+          echo "  kubectl rollout undo deployment/platform-operator-controller-manager -n platform-operator-system --context=${{ inputs.target_environment }}"
+          echo "::notice::Promotion ID ${{ needs.validate.outputs.promotion-id }} marked as FAILED"

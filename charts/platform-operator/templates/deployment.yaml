@@ -70,6 +70,14 @@ spec:
               port: health
             initialDelaySeconds: 5
             periodSeconds: 10
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            failureThreshold: {{ .Values.startupProbe.failureThreshold | default 30 }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds | default 2 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
@@ -86,3 +94,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 30 }}

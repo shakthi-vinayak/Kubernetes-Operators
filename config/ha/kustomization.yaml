@@ -4,6 +4,4 @@ kind: Kustomization
 namespace: platform-operator-system
 
 resources:
-  - servicemonitor.yaml
-  - prometheusrule.yaml
-  - slo.yaml
+  - pdb.yaml

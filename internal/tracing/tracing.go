@@ -177,3 +177,35 @@ func SubReconcileAttributes(resource, appName, namespace string) []attribute.Key
 		attribute.String("subreconcile.namespace", namespace),
 	}
 }
+
+// CorrelationID generates a unique correlation ID for a reconciliation cycle.
+// The ID combines the resource namespace, name, and a generation number to
+// correlate spans across a single reconciliation pass.
+func CorrelationID(namespace, name string, generation int64) string {
+	return fmt.Sprintf("%s/%s@%d", namespace, name, generation)
+}
+
+// ReconcileSpan creates a top-level reconciliation span with a correlation ID.
+// The caller must call span.End() when done.
+func ReconcileSpan(ctx context.Context, name, namespace string, generation int64) (context.Context, trace.Span) {
+	corrID := CorrelationID(namespace, name, generation)
+	return StartSpan(ctx, "reconcile.PlatformApplication",
+		attribute.String("reconcile.name", name),
+		attribute.String("reconcile.namespace", namespace),
+		attribute.Int64("reconcile.generation", generation),
+		attribute.String("reconcile.correlation_id", corrID),
+	)
+}
+
+// SubReconcileSpan creates a child span for a sub-reconciler operation.
+// It inherits the parent span's correlation ID through context propagation.
+func SubReconcileSpan(ctx context.Context, resource, appName, namespace string) (context.Context, trace.Span) {
+	return StartSpan(ctx, "subreconcile."+resource,
+		SubReconcileAttributes(resource, appName, namespace)...)
+}
+
+// RecordResourceEvent adds a span event for a resource operation (create, update, delete).
+func RecordResourceEvent(span trace.Span, resource, operation string, attrs ...attribute.KeyValue) {
+	eventName := fmt.Sprintf("resource.%s.%s", resource, operation)
+	span.AddEvent(eventName, trace.WithAttributes(attrs...))
+}

@@ -71,6 +71,23 @@ test-integration: envtest ## Run integration tests with envtest.
 test-race: ## Run tests with race detector.
 	go test -race ./... -coverprofile cover.out
 
+.PHONY: test-coverage
+test-coverage: ## Run tests and enforce minimum coverage threshold (60%).
+	go test -coverprofile=cover.out -covermode=atomic ./internal/... ./api/...
+	@go tool cover -func=cover.out | tail -1 | awk '{if ($$3 < 60.0) {print "FAIL: total coverage " $$3 "%% is below 60%% threshold"; exit 1} else {print "PASS: total coverage " $$3 "%%"}}'
+
+.PHONY: test-chaos
+test-chaos: ## Run chaos and failure injection tests.
+	go test ./test/chaos/... ./test/failure/... -v -race
+
+.PHONY: test-bench
+test-bench: ## Run benchmark tests.
+	go test -bench=. -benchmem ./internal/...
+
+.PHONY: test-scale
+test-scale: ## Run scale tests (100+ reconciliations).
+	go test -run=TestScale ./internal/controller/ -v
+
 ##@ Build
 
 .PHONY: build

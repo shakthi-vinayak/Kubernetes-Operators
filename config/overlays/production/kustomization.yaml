@@ -9,6 +9,7 @@ namespace: platform-operator-system
 resources:
   - ../../default
   - ../../monitoring
+  - ../../ha
 
 patches:
   - target:
@@ -27,6 +28,7 @@ patches:
               prometheus.io/scrape: "true"
               prometheus.io/port: "8080"
           spec:
+            terminationGracePeriodSeconds: 30
             containers:
               - name: manager
                 args:
@@ -42,6 +44,12 @@ patches:
                   requests:
                     cpu: 100m
                     memory: 128Mi
+                startupProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  failureThreshold: 30
+                  periodSeconds: 2
             topologySpreadConstraints:
               - maxSkew: 1
                 topologyKey: kubernetes.io/hostname
@@ -49,6 +57,15 @@ patches:
                 labelSelector:
                   matchLabels:
                     control-plane: controller-manager
+            affinity:
+              podAntiAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    podAffinityTerm:
+                      labelSelector:
+                        matchLabels:
+                          control-plane: controller-manager
+                      topologyKey: kubernetes.io/hostname
 
 labels:
   - pairs:
