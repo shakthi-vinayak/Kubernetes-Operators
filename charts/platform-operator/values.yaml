@@ -1,0 +1,108 @@
+# Platform Operator Helm Chart Values
+
+# -- Number of operator replicas (use 1 with leader election)
+replicaCount: 1
+
+image:
+  # -- Container image repository
+  repository: ghcr.io/shakthi-vinayak/kubernetes-operators
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (defaults to chart appVersion)
+  tag: ""
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []
+# -- Override the chart name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""
+
+# -- Operator configuration flags
+operator:
+  # -- Enable leader election for HA
+  leaderElect: true
+  # -- Leader election lease ID
+  leaderElectionId: "platform-operator.example.io"
+  # -- Maximum concurrent reconcile workers
+  concurrentReconciles: 1
+  # -- Metrics bind address
+  metricsBindAddress: ":8080"
+  # -- Health probe bind address
+  healthProbeBindAddress: ":8081"
+  # -- Enable OpenTelemetry tracing
+  enableTracing: false
+  # -- Tracing exporter type (otlp, stdout, none)
+  tracingExporter: "none"
+  # -- OTLP collector endpoint
+  tracingEndpoint: ""
+  # -- Use insecure connection for OTLP
+  tracingInsecure: false
+
+serviceAccount:
+  # -- Create a service account
+  create: true
+  # -- Annotations for the service account
+  annotations: {}
+  # -- Service account name (auto-generated if empty)
+  name: ""
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+
+# -- Container security context
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Resource requests and limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# -- Metrics service configuration
+metricsService:
+  # -- Enable metrics service
+  enabled: true
+  # -- Service type
+  type: ClusterIP
+  # -- Metrics port
+  port: 8080
+
+# -- ServiceMonitor for Prometheus Operator
+serviceMonitor:
+  # -- Create a ServiceMonitor resource
+  enabled: false
+  # -- Scrape interval
+  interval: 30s
+  # -- Scrape timeout
+  scrapeTimeout: 10s
+  # -- Additional labels for the ServiceMonitor
+  additionalLabels: {}
+
+# -- CRD management
+crds:
+  # -- Install CRDs with the chart
+  install: true

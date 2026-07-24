@@ -1,0 +1,43 @@
+{{- if .Values.metricsService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "platform-operator.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform-operator.labels" . | nindent 4 }}
+    control-plane: controller-manager
+spec:
+  type: {{ .Values.metricsService.type }}
+  ports:
+    - port: {{ .Values.metricsService.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "platform-operator.selectorLabels" . | nindent 4 }}
+    control-plane: controller-manager
+{{- end }}
+---
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "platform-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform-operator.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "platform-operator.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+{{- end }}

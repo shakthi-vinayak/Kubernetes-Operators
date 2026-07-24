@@ -1,0 +1,17 @@
+apiVersion: v2
+name: platform-operator
+description: A Kubernetes Platform Operator for declarative application management
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - kubernetes
+  - operator
+  - platform
+  - controller
+home: https://github.com/shakthi-vinayak/Kubernetes-Operators
+sources:
+  - https://github.com/shakthi-vinayak/Kubernetes-Operators
+maintainers:
+  - name: platform-operator
+    url: https://github.com/shakthi-vinayak/Kubernetes-Operators
