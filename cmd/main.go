@@ -16,8 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	platformv1alpha1 "github.com/example/platform-operator/api/v1alpha1"
+	platformv1beta1 "github.com/example/platform-operator/api/v1beta1"
 	"github.com/example/platform-operator/internal/controller"
 	_ "github.com/example/platform-operator/internal/metrics" // Register custom metrics
 	"github.com/example/platform-operator/internal/tracing"
@@ -31,6 +33,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(platformv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(platformv1beta1.AddToScheme(scheme))
 }
 
 // main is the entry point for the Platform Operator.
@@ -104,6 +107,9 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       leaderElectionID,
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port: 9443,
+		}),
 		// LeaderElectionNamespace defaults to the pod namespace when running
 		// in-cluster. For local development, it uses the kubeconfig namespace.
 	})
@@ -119,6 +125,22 @@ func main() {
 		Concurrency: concurrentReconciles,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PlatformApplication")
+		os.Exit(1)
+	}
+
+	// Register admission webhooks for both API versions.
+	if err := ctrl.NewWebhookManagedBy(mgr, &platformv1alpha1.PlatformApplication{}).
+		WithDefaulter(&platformv1alpha1.PlatformApplicationDefaulter{}).
+		WithValidator(&platformv1alpha1.PlatformApplicationValidator{}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "PlatformApplication v1alpha1")
+		os.Exit(1)
+	}
+	if err := ctrl.NewWebhookManagedBy(mgr, &platformv1beta1.PlatformApplication{}).
+		WithDefaulter(&platformv1beta1.PlatformApplicationDefaulter{}).
+		WithValidator(&platformv1beta1.PlatformApplicationValidator{}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "PlatformApplication v1beta1")
 		os.Exit(1)
 	}
 

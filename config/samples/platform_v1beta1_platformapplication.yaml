@@ -1,0 +1,61 @@
+# v1beta1 PlatformApplication sample with new fields (envFrom, podAnnotations).
+apiVersion: platform.example.io/v1beta1
+kind: PlatformApplication
+metadata:
+  name: sample-app-v1beta1
+  namespace: default
+  labels:
+    app: sample-app
+spec:
+  image:
+    repository: nginx
+    tag: "1.25-alpine"
+    pullPolicy: IfNotPresent
+  replicas:
+    min: 2
+    max: 5
+  service:
+    port: 80
+    type: ClusterIP
+  configuration:
+    APP_ENV: production
+    LOG_LEVEL: info
+  # v1beta1-only: environment variables from ConfigMaps/Secrets
+  envFrom:
+    - configMapRef:
+        name: app-config
+        optional: true
+    - secretRef:
+        name: app-secrets
+        optional: true
+  # v1beta1-only: custom pod annotations
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+  autoscaling:
+    enabled: true
+    targetCPUUtilization: 75
+  gateway:
+    enabled: true
+    host: sample-app.example.io
+    gatewayRef: infra/platform-gateway
+    pathPrefix: /
+  observability:
+    metrics: true
+  security:
+    networkPolicy: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  healthChecks:
+    livenessPath: /healthz
+    readinessPath: /readyz
+    port: 8080
+  rollout:
+    strategy: RollingUpdate
+    maxUnavailable: "25%"
+    maxSurge: "25%"

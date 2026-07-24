@@ -23,7 +23,7 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
 webhooks:
-  - name: mplatformapplication.kb.io
+  - name: mplatformapplication.v1alpha1.kb.io
     admissionReviewVersions:
       - v1
     clientConfig:
@@ -38,6 +38,21 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["platformapplications"]
+  - name: mplatformapplication.v1beta1.kb.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: webhook-service
+        namespace: system
+        path: /mutate-platform-example-io-v1beta1-platformapplication
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["platform.example.io"]
+        apiVersions: ["v1beta1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["platformapplications"]
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -46,7 +61,7 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
 webhooks:
-  - name: vplatformapplication.kb.io
+  - name: vplatformapplication.v1alpha1.kb.io
     admissionReviewVersions:
       - v1
     clientConfig:
@@ -59,5 +74,20 @@ webhooks:
     rules:
       - apiGroups: ["platform.example.io"]
         apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["platformapplications"]
+  - name: vplatformapplication.v1beta1.kb.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: webhook-service
+        namespace: system
+        path: /validate-platform-example-io-v1beta1-platformapplication
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["platform.example.io"]
+        apiVersions: ["v1beta1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["platformapplications"]
