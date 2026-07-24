@@ -1,0 +1,127 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    name: E2E on Kind
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build operator binary
+        run: go build -o bin/manager cmd/main.go
+
+      - name: Build Docker image
+        run: docker build -t platform-operator:e2e .
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: e2e-test
+          config: hack/kind-config.yaml
+
+      - name: Load image into Kind
+        run: kind load docker-image platform-operator:e2e --name e2e-test
+
+      - name: Install CRDs
+        run: |
+          # Generate CRDs if controller-gen is available, otherwise use manual approach
+          go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.5
+          controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+          kubectl apply -f config/crd/bases/
+
+      - name: Deploy operator
+        run: |
+          kubectl create namespace platform-operator-system
+          kubectl apply -f config/rbac/service_account.yaml
+          kubectl apply -f config/rbac/role.yaml
+          kubectl apply -f config/rbac/role_binding.yaml
+
+          # Patch the manager image to use the locally built image
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: platform-operator-controller-manager
+            namespace: platform-operator-system
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                control-plane: controller-manager
+            template:
+              metadata:
+                labels:
+                  control-plane: controller-manager
+              spec:
+                serviceAccountName: platform-operator
+                containers:
+                  - name: manager
+                    image: platform-operator:e2e
+                    imagePullPolicy: IfNotPresent
+                    command: ["/manager"]
+                    args:
+                      - "--leader-elect"
+                      - "--metrics-bind-address=:8080"
+                      - "--health-probe-bind-address=:8081"
+                    ports:
+                      - containerPort: 8080
+                        name: metrics
+                      - containerPort: 8081
+                        name: health
+                    livenessProbe:
+                      httpGet:
+                        path: /healthz
+                        port: 8081
+                      initialDelaySeconds: 15
+                    readinessProbe:
+                      httpGet:
+                        path: /readyz
+                        port: 8081
+                      initialDelaySeconds: 5
+                    resources:
+                      limits:
+                        cpu: 500m
+                        memory: 256Mi
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                    securityContext:
+                      runAsNonRoot: true
+                      readOnlyRootFilesystem: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+          EOF
+
+      - name: Wait for operator to be ready
+        run: |
+          kubectl wait --for=condition=available deployment/platform-operator-controller-manager \
+            -n platform-operator-system --timeout=120s
+
+      - name: Run E2E tests
+        run: go test ./test/e2e/... -v -timeout 10m
+
+      - name: Collect operator logs on failure
+        if: failure()
+        run: |
+          echo "=== Operator Logs ==="
+          kubectl logs -n platform-operator-system -l control-plane=controller-manager --tail=200
+          echo "=== Operator Events ==="
+          kubectl get events -n platform-operator-system --sort-by='.lastTimestamp'
+          echo "=== PlatformApplications ==="
+          kubectl get platformapplications -A -o yaml
+          echo "=== Deployments ==="
+          kubectl get deployments -A -o wide
+          echo "=== Pods ==="
+          kubectl get pods -A -o wide
