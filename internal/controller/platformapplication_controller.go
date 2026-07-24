@@ -93,6 +93,10 @@ func (r *PlatformApplicationReconciler) Reconcile(ctx context.Context, req ctrl.
 	ctx = log.IntoContext(ctx, logger)
 	startTime := time.Now()
 
+	// Track active reconcile workers.
+	metrics.ActiveReconcilers.Inc()
+	defer metrics.ActiveReconcilers.Dec()
+
 	// Start tracing span for this reconciliation.
 	ctx, span := tracing.StartSpan(ctx, "reconcile.PlatformApplication",
 		attribute.String("reconcile.name", req.Name),

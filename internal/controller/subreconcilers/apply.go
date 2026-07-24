@@ -112,9 +112,11 @@ func applyOnce(ctx context.Context, c client.Client, desired client.Object, kind
 
 	if apierrors.IsNotFound(err) {
 		// Resource does not exist; create it.
+		apiStart := time.Now()
 		if err := c.Create(ctx, desired); err != nil {
 			return "", fmt.Errorf("creating %s %s/%s: %w", kind, namespace, name, err)
 		}
+		metrics.ObserveAPICall("create", resourceKind(kind), time.Since(apiStart))
 		logger.Info("resource created", "kind", kind, "name", name, "namespace", namespace)
 		return ApplyResultCreated, nil
 	}
@@ -125,13 +127,17 @@ func applyOnce(ctx context.Context, c client.Client, desired client.Object, kind
 	// Compare spec to determine if an update is needed.
 	// We use semantic equality to avoid unnecessary writes from formatting differences.
 	if equality.Semantic.DeepEqual(existing, desired) {
+		metrics.ObserveNoOpApply(resourceKind(kind))
 		return ApplyResultUnchanged, nil
 	}
 
 	// Update the resource using Server-Side Apply via Patch.
+	apiStart := time.Now()
 	if err := c.Patch(ctx, desired, client.Apply, client.FieldOwner(FieldManager), client.ForceOwnership); err != nil {
+		metrics.ObserveAPICall("patch", resourceKind(kind), time.Since(apiStart))
 		return "", fmt.Errorf("applying %s %s/%s: %w", kind, namespace, name, err)
 	}
+	metrics.ObserveAPICall("patch", resourceKind(kind), time.Since(apiStart))
 
 	logger.Info("resource updated", "kind", kind, "name", name, "namespace", namespace)
 	return ApplyResultUpdated, nil

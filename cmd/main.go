@@ -50,6 +50,7 @@ func init() {
 func main() {
 	var metricsAddr string
 	var probeAddr string
+	var pprofAddr string
 	var enableLeaderElection bool
 	var leaderElectionID string
 	var concurrentReconciles int
@@ -59,6 +60,7 @@ func main() {
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&pprofAddr, "pprof-bind-address", "", "The address the pprof endpoint binds to (empty = disabled). Use :6060 for local profiling.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. Enabling this will ensure "+
 			"there is only one active controller manager.")
@@ -105,6 +107,7 @@ func main() {
 			BindAddress: metricsAddr,
 		},
 		HealthProbeBindAddress: probeAddr,
+		PprofBindAddress:       pprofAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       leaderElectionID,
 		WebhookServer: webhook.NewServer(webhook.Options{
@@ -158,6 +161,7 @@ func main() {
 		"concurrent-reconciles", concurrentReconciles,
 		"tracing", enableTracing,
 		"tracing-exporter", tracingExporter,
+		"pprof", pprofAddr,
 	)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")

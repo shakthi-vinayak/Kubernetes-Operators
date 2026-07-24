@@ -89,6 +89,33 @@ var (
 		},
 		[]string{"result"},
 	)
+
+	// APICallDurationSeconds records the latency of Kubernetes API calls.
+	APICallDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "platform_operator_api_call_duration_seconds",
+			Help:    "Duration of Kubernetes API calls (get, create, patch, delete)",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5},
+		},
+		[]string{"operation", "resource"},
+	)
+
+	// NoOpApplyTotal counts apply operations that detected no changes.
+	NoOpApplyTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "platform_operator_noop_apply_total",
+			Help: "Total number of apply operations where no changes were detected (semantic equality)",
+		},
+		[]string{"resource"},
+	)
+
+	// ActiveReconcilers tracks the number of currently active reconcile workers.
+	ActiveReconcilers = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "platform_operator_active_reconcilers",
+			Help: "Number of currently active reconcile workers",
+		},
+	)
 )
 
 func init() {
@@ -102,6 +129,9 @@ func init() {
 		ResourceApplyTotal,
 		ReconcileRequeueTotal,
 		StatusUpdateTotal,
+		APICallDurationSeconds,
+		NoOpApplyTotal,
+		ActiveReconcilers,
 	)
 }
 
@@ -125,4 +155,14 @@ func ObserveResourceApply(resource, outcome string) {
 // ObserveError records a reconciliation error with classification.
 func ObserveError(errorType, errorClass string) {
 	ReconcileErrorsTotal.WithLabelValues(errorType, errorClass).Inc()
+}
+
+// ObserveAPICall records API call latency metrics.
+func ObserveAPICall(operation, resource string, duration time.Duration) {
+	APICallDurationSeconds.WithLabelValues(operation, resource).Observe(duration.Seconds())
+}
+
+// ObserveNoOpApply records a no-op apply (resource unchanged).
+func ObserveNoOpApply(resource string) {
+	NoOpApplyTotal.WithLabelValues(resource).Inc()
 }
