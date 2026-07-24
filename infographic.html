@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes Platform Operator — Project Infographic</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
+    color: #e6edf3;
+    padding: 40px 20px;
+    min-height: 100vh;
+  }
+  .container { max-width: 1000px; margin: 0 auto; }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 50px;
+    padding: 40px;
+    background: linear-gradient(135deg, #1a1f35, #1f2937);
+    border-radius: 20px;
+    border: 1px solid #30363d;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .header h1 {
+    font-size: 2.8em;
+    background: linear-gradient(90deg, #58a6ff, #79c0ff, #a371f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 10px;
+  }
+  .header p { font-size: 1.2em; color: #8b949e; }
+  .header .repo {
+    margin-top: 15px;
+    display: inline-block;
+    padding: 8px 20px;
+    background: #21262d;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    font-size: 0.9em;
+    color: #58a6ff;
+    text-decoration: none;
+  }
+
+  /* Section Title */
+  .section-title {
+    font-size: 1.8em;
+    color: #79c0ff;
+    margin: 40px 0 20px;
+    padding-left: 15px;
+    border-left: 4px solid #58a6ff;
+  }
+
+  /* Problem Section */
+  .problem-solution {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-bottom: 40px;
+  }
+  .card {
+    background: #161b22;
+    border-radius: 16px;
+    padding: 30px;
+    border: 1px solid #30363d;
+    transition: transform 0.2s;
+  }
+  .card:hover { transform: translateY(-3px); }
+  .card-red { border-left: 4px solid #f85149; }
+  .card-green { border-left: 4px solid #3fb950; }
+  .card h3 { font-size: 1.3em; margin-bottom: 15px; }
+  .card-red h3 { color: #f85149; }
+  .card-green h3 { color: #3fb950; }
+  .card ul { list-style: none; padding: 0; }
+  .card li {
+    padding: 8px 0;
+    font-size: 0.95em;
+    color: #8b949e;
+    border-bottom: 1px solid #21262d;
+  }
+  .card li:last-child { border: none; }
+  .card .big-num {
+    font-size: 3em;
+    font-weight: bold;
+    color: #f85149;
+    text-align: center;
+    margin: 10px 0;
+  }
+  .card-green .big-num { color: #3fb950; }
+
+  /* Flow Diagram */
+  .flow-diagram {
+    background: #161b22;
+    border-radius: 16px;
+    padding: 40px;
+    border: 1px solid #30363d;
+    margin-bottom: 40px;
+  }
+  .flow-step {
+    display: flex;
+    align-items: center;
+    margin: 15px 0;
+  }
+  .flow-step .step-num {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: #1f6feb;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.1em;
+    flex-shrink: 0;
+    margin-right: 15px;
+  }
+  .flow-step .step-content {
+    background: #21262d;
+    padding: 12px 20px;
+    border-radius: 10px;
+    flex-grow: 1;
+    border: 1px solid #30363d;
+  }
+  .flow-step .step-content strong { color: #79c0ff; }
+  .flow-step .step-content span { color: #8b949e; font-size: 0.9em; }
+  .flow-arrow {
+    text-align: center;
+    color: #484f58;
+    font-size: 1.5em;
+    margin: -5px 0 -5px 20px;
+  }
+
+  /* Resources Grid */
+  .resources-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 40px;
+  }
+  .resource-card {
+    background: #161b22;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    border: 1px solid #30363d;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .resource-card:hover {
+    transform: translateY(-3px);
+    border-color: #58a6ff;
+  }
+  .resource-icon { font-size: 2em; margin-bottom: 10px; }
+  .resource-name { font-weight: bold; color: #e6edf3; font-size: 1em; }
+  .resource-desc { font-size: 0.8em; color: #8b949e; margin-top: 5px; }
+
+  /* Milestones Timeline */
+  .milestones {
+    background: #161b22;
+    border-radius: 16px;
+    padding: 30px;
+    border: 1px solid #30363d;
+    margin-bottom: 40px;
+  }
+  .milestone-phases {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .phase {
+    background: #21262d;
+    border-radius: 10px;
+    padding: 20px;
+    border-left: 3px solid;
+  }
+  .phase-1 { border-color: #58a6ff; }
+  .phase-2 { border-color: #3fb950; }
+  .phase-3 { border-color: #d29922; }
+  .phase-4 { border-color: #a371f7; }
+  .phase-5 { border-color: #f85149; }
+  .phase-6 { border-color: #79c0ff; }
+  .phase h4 { font-size: 1em; margin-bottom: 10px; color: #e6edf3; }
+  .phase .phase-tag {
+    font-size: 0.75em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    display: inline-block;
+  }
+  .phase-1 .phase-tag { background: rgba(88,166,255,0.2); color: #58a6ff; }
+  .phase-2 .phase-tag { background: rgba(63,185,80,0.2); color: #3fb950; }
+  .phase-3 .phase-tag { background: rgba(210,153,34,0.2); color: #d29922; }
+  .phase-4 .phase-tag { background: rgba(163,113,247,0.2); color: #a371f7; }
+  .phase-5 .phase-tag { background: rgba(248,81,73,0.2); color: #f85149; }
+  .phase-6 .phase-tag { background: rgba(121,192,255,0.2); color: #79c0ff; }
+  .phase p { font-size: 0.85em; color: #8b949e; line-height: 1.5; }
+
+  /* Stats Section */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 20px;
+    margin-bottom: 40px;
+  }
+  .stat-box {
+    background: linear-gradient(135deg, #161b22, #1c2331);
+    border-radius: 16px;
+    padding: 25px;
+    text-align: center;
+    border: 1px solid #30363d;
+  }
+  .stat-number {
+    font-size: 2.5em;
+    font-weight: bold;
+    background: linear-gradient(90deg, #58a6ff, #a371f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stat-label {
+    font-size: 0.85em;
+    color: #8b949e;
+    margin-top: 5px;
+  }
+
+  /* Tech Stack */
+  .tech-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 40px;
+  }
+  .tech-badge {
+    padding: 10px 20px;
+    background: #21262d;
+    border-radius: 25px;
+    border: 1px solid #30363d;
+    font-size: 0.9em;
+    color: #e6edf3;
+    transition: border-color 0.2s;
+  }
+  .tech-badge:hover { border-color: #58a6ff; }
+  .tech-badge strong { color: #79c0ff; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 30px;
+    background: #161b22;
+    border-radius: 16px;
+    border: 1px solid #30363d;
+  }
+  .footer p { color: #8b949e; font-size: 0.95em; margin-bottom: 10px; }
+  .footer a {
+    color: #58a6ff;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 1.1em;
+  }
+  .footer .hashtags {
+    margin-top: 15px;
+    font-size: 0.85em;
+    color: #484f58;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>Kubernetes Platform Operator</h1>
+    <p>From 7+ YAML files to 1 declarative custom resource</p>
+    <br>
+    <a class="repo" href="https://github.com/shakthi-vinayak/Kubernetes-Operators">
+      github.com/shakthi-vinayak/Kubernetes-Operators
+    </a>
+  </div>
+
+  <!-- PROBLEM vs SOLUTION -->
+  <div class="section-title">The Problem & The Solution</div>
+  <div class="problem-solution">
+    <div class="card card-red">
+      <h3>WITHOUT Operator</h3>
+      <div class="big-num">7+</div>
+      <ul>
+        <li>Deployment YAML (50 lines)</li>
+        <li>Service YAML (20 lines)</li>
+        <li>HPA YAML (30 lines)</li>
+        <li>HTTPRoute YAML (40 lines)</li>
+        <li>NetworkPolicy YAML (25 lines)</li>
+        <li>PDB YAML (15 lines)</li>
+        <li>ServiceMonitor YAML (20 lines)</li>
+        <li>Total: 200+ lines per app</li>
+      </ul>
+    </div>
+    <div class="card card-green">
+      <h3>WITH Operator</h3>
+      <div class="big-num">1</div>
+      <ul>
+        <li>Single PlatformApplication CR</li>
+        <li>~40 lines of YAML</li>
+        <li>Auto-generates all 7 resources</li>
+        <li>Self-healing via drift correction</li>
+        <li>Production-hardened defaults</li>
+        <li>GitOps-ready</li>
+        <li>Multi-environment overlays</li>
+        <li>Total: 80% less YAML</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- RECONCILIATION FLOW -->
+  <div class="section-title">How the Reconciliation Loop Works</div>
+  <div class="flow-diagram">
+    <div class="flow-step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <strong>FETCH</strong> — <span>Get PlatformApplication from Kubernetes cache</span>
+      </div>
+    </div>
+    <div class="flow-arrow">|</div>
+    <div class="flow-step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <strong>COMPUTE</strong> — <span>Each sub-reconciler builds desired child resources (pure functions)</span>
+      </div>
+    </div>
+    <div class="flow-arrow">|</div>
+    <div class="flow-step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <strong>APPLY</strong> — <span>Server-Side Apply creates/updates resources idempotently</span>
+      </div>
+    </div>
+    <div class="flow-arrow">|</div>
+    <div class="flow-step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <strong>DETECT DRIFT</strong> — <span>SSA compares desired vs actual; only writes on changes</span>
+      </div>
+    </div>
+    <div class="flow-arrow">|</div>
+    <div class="flow-step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <strong>UPDATE STATUS</strong> — <span>Set Ready/Progressing/Degraded conditions + readyReplicas</span>
+      </div>
+    </div>
+    <div class="flow-arrow">|</div>
+    <div class="flow-step">
+      <div class="step-num">6</div>
+      <div class="step-content">
+        <strong>REQUEUE</strong> — <span>Retry on errors, re-check if replicas not ready</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANAGED RESOURCES -->
+  <div class="section-title">7 Resources Auto-Generated from 1 CR</div>
+  <div class="resources-grid">
+    <div class="resource-card">
+      <div class="resource-icon">D</div>
+      <div class="resource-name">Deployment</div>
+      <div class="resource-desc">Always created. Container, replicas, probes, security</div>
+    </div>
+    <div class="resource-card">
+      <div class="resource-icon">S</div>
+      <div class="resource-name">Service</div>
+      <div class="resource-desc">Always created. Port mapping, selectors</div>
+    </div>
+    <div class="resource-card">
+      <div class="resource-icon">H</div>
+      <div class="resource-name">HPA</div>
+      <div class="resource-desc">When autoscaling enabled. CPU-based scaling</div>
+    </div>
+    <div class="resource-card">
+      <div class="resource-icon">R</div>
+      <div class="resource-name">HTTPRoute</div>
+      <div class="resource-desc">When gateway enabled. Gateway API routing</div>
+    </div>
+    <div class="resource-card">
+      <div class="resource-icon">N</div>
+      <div class="resource-name">NetworkPolicy</div>
+      <div class="resource-desc">When security enabled. Ingress/egress rules</div>
+    </div>
+    <div class="resource-card">
+      <div class="resource-icon">P</div>
+      <div class="resource-name">PDB</div>
+      <div class="resource-desc">When replicas > 1. HA during disruptions</div>
+    </div>
+    <div class="resource-card">
+      <div class="resource-icon">M</div>
+      <div class="resource-name">ServiceMonitor</div>
+      <div class="resource-desc">When metrics enabled. Prometheus scraping</div>
+    </div>
+  </div>
+
+  <!-- PROJECT STATS -->
+  <div class="section-title">Project at a Glance</div>
+  <div class="stats">
+    <div class="stat-box">
+      <div class="stat-number">24</div>
+      <div class="stat-label">Milestones Completed</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">159</div>
+      <div class="stat-label">Files in Repository</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">410</div>
+      <div class="stat-label">Reconciles / sec</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">3</div>
+      <div class="stat-label">API Versions (v1alpha1, v1beta1, v1)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">1000</div>
+      <div class="stat-label">CRs Scale Tested</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">0</div>
+      <div class="stat-label">Errors at Scale</div>
+    </div>
+  </div>
+
+  <!-- MILESTONES -->
+  <div class="section-title">24-Milestone Journey</div>
+  <div class="milestones">
+    <div class="milestone-phases">
+      <div class="phase phase-1">
+        <div class="phase-tag">Phase 1 — Foundation</div>
+        <h4>M1-M2: Project Setup</h4>
+        <p>Go module, Kubebuilder scaffold, Makefile, Dockerfile, CI skeleton, API types, unit tests, ADRs</p>
+      </div>
+      <div class="phase phase-2">
+        <div class="phase-tag">Phase 2 — Hardening</div>
+        <h4>M3-M5: Production Ready</h4>
+        <p>Error classification, SSA conflict retries, concurrency, Grafana dashboards, OpenTelemetry tracing, SBOM</p>
+      </div>
+      <div class="phase phase-3">
+        <div class="phase-tag">Phase 3 — Testing & CI</div>
+        <h4>M6-M7: Quality Gates</h4>
+        <p>envtest integration tests, E2E tests, full GitHub Actions pipeline, release automation, multi-arch builds</p>
+      </div>
+      <div class="phase phase-4">
+        <div class="phase-tag">Phase 4 — Packaging</div>
+        <h4>M8-M10: Distribution</h4>
+        <p>Kustomize overlays, Argo CD GitOps, v1beta1 API evolution, hub/spoke conversion, benchmarks, scale testing</p>
+      </div>
+      <div class="phase phase-5">
+        <div class="phase-tag">Phase 5 — Advanced</div>
+        <h4>M11-M18: Enterprise</h4>
+        <p>Leader election, concurrency, chaos testing, SLO alerting, OPA/Kyverno policies, canary deployments</p>
+      </div>
+      <div class="phase phase-6">
+        <div class="phase-tag">Phase 6 — Maturity</div>
+        <h4>M19-M24: GA Ready</h4>
+        <p>OLM bundle, Argo Rollouts, v1 GA API, 1000-CR scale test, operations guide, full documentation</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- TECH STACK -->
+  <div class="section-title">Technology Stack</div>
+  <div class="tech-stack">
+    <div class="tech-badge"><strong>Go</strong> 1.26</div>
+    <div class="tech-badge"><strong>controller-runtime</strong> v0.24</div>
+    <div class="tech-badge"><strong>Kubebuilder</strong> v4</div>
+    <div class="tech-badge"><strong>Gateway API</strong> v1.6</div>
+    <div class="tech-badge"><strong>Prometheus</strong> Metrics</div>
+    <div class="tech-badge"><strong>OpenTelemetry</strong> Tracing</div>
+    <div class="tech-badge"><strong>Server-Side Apply</strong></div>
+    <div class="tech-badge"><strong>Distroless</strong> Container</div>
+    <div class="tech-badge"><strong>Helm</strong> Chart</div>
+    <div class="tech-badge"><strong>Kustomize</strong> Overlays</div>
+    <div class="tech-badge"><strong>Argo CD</strong> GitOps</div>
+    <div class="tech-badge"><strong>Argo Rollouts</strong> Progressive Delivery</div>
+    <div class="tech-badge"><strong>OPA</strong> Gatekeeper</div>
+    <div class="tech-badge"><strong>Kyverno</strong> Policies</div>
+    <div class="tech-badge"><strong>GitHub Actions</strong> CI/CD</div>
+    <div class="tech-badge"><strong>Trivy</strong> Scanning</div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <p>Production-grade Kubernetes Operator built with 24 milestones</p>
+    <a href="https://github.com/shakthi-vinayak/Kubernetes-Operators">
+      github.com/shakthi-vinayak/Kubernetes-Operators
+    </a>
+    <div class="hashtags">
+      #Kubernetes #KubernetesOperator #PlatformEngineering #DevOps #CloudNative #Go #GitOps #OpenSource
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

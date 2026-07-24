@@ -1,0 +1,397 @@
+How to Plan Coding the Kubernetes Operator?
+A Step-by-Step Planning Guide
+
+============================================================
+
+Building a Kubernetes Operator is one of the most rewarding projects for any platform engineer. But without a solid plan, you can easily get lost in the complexity of CRDs, controllers, webhooks, and reconciliation loops.
+
+In this article, I'll walk you through the exact step-by-step planning process I used to build a production-grade Kubernetes Platform Operator — from zero to 24 milestones.
+
+Full source code: https://github.com/shakthi-vinayak/Kubernetes-Operators
+
+Let's dive in.
+
+============================================================
+STEP 1: Define the Problem You're Solving
+============================================================
+
+Before writing a single line of code, answer this:
+
+"What manual Kubernetes work am I automating?"
+
+In our case, developers were manually creating 7+ YAML files for every application:
+- Deployment (container spec, replicas, probes)
+- Service (network exposure)
+- HPA (autoscaling)
+- HTTPRoute (Gateway API ingress)
+- NetworkPolicy (security)
+- PodDisruptionBudget (HA during disruptions)
+- ServiceMonitor (Prometheus metrics)
+
+That's 200+ lines of YAML per app, repeated across dozens of services.
+
+The goal: Replace all of that with a single PlatformApplication custom resource.
+
+KEY TAKEAWAY: Your operator should solve a real, painful, repetitive problem. Don't build an operator for something a Helm chart can handle.
+
+============================================================
+STEP 2: Design the API (CRD) First
+============================================================
+
+The API is your contract with users. Design it before writing any controller logic.
+
+Ask yourself:
+- What fields are required vs optional?
+- What are sensible defaults?
+- What validation rules do I need?
+- What should the status look like?
+
+Our PlatformApplication spec:
+- image: { repository, tag, pullPolicy }
+- replicas: { min, max }
+- service: { port, type }
+- autoscaling: { enabled, targetCPU }
+- gateway: { enabled, host, pathPrefix }
+- security: { networkPolicy }
+- observability: { metrics }
+- resources: { requests, limits }
+- healthChecks: { livenessPath, readinessPath }
+
+Status:
+- conditions: [Ready, Progressing, Degraded, ConfigurationValid]
+- readyReplicas, observedGeneration, deployedVersion, URL
+
+KEY TAKEAWAY: Design the spec (desired state) and status (observed state) carefully. The spec is what users set. The status is what the operator reports back. Get this right and everything else flows.
+
+============================================================
+STEP 3: Choose Your Tools and Framework
+============================================================
+
+Don't build from scratch. Use the ecosystem:
+
+Language: Go (the only real choice for Kubernetes operators)
+Framework: controller-runtime (industry standard, used by all major operators)
+Scaffolding: Kubebuilder (generates project structure, CRDs, webhooks)
+API Types: Kubernetes API conventions (metav1, runtime.Scheme)
+Apply Strategy: Server-Side Apply (SSA) for conflict-free reconciliation
+Ingress: Gateway API (not legacy Ingress)
+Metrics: Prometheus client_golang
+Tracing: OpenTelemetry
+CI/CD: GitHub Actions
+Container: Distroless (minimal attack surface)
+
+KEY TAKEAWAY: controller-runtime + Kubebuilder is the golden path. It handles caching, leader election, rate limiting, and webhook serving out of the box.
+
+============================================================
+STEP 4: Choose the Reconciliation Pattern
+============================================================
+
+The reconciliation loop is the heart of your operator. Decide early:
+
+Option A: Single Reconciler (simple, all logic in one function)
+Option B: Sub-Reconciler Pattern (each child resource has its own reconciler)
+
+We chose the Sub-Reconciler Pattern:
+- ReconcileDeployment
+- ReconcileService
+- ReconcileHPA
+- ReconcileHTTPRoute
+- ReconcileNetworkPolicy
+- ReconcilePDB
+- ReconcileServiceMonitor
+
+Each sub-reconciler is a pure function: input = PlatformApplication spec, output = desired Kubernetes resource.
+
+Benefits:
+- Each sub-reconciler is independently testable
+- Pure functions are easy to benchmark
+- Adding a new resource type = adding a new sub-reconciler
+- Metrics per sub-reconciler show exactly which resource is slow
+
+KEY TAKEAWAY: The sub-reconciler pattern scales. Start with it even if you only have 2 resources. You'll thank yourself later.
+
+============================================================
+STEP 5: Plan Your Milestones (Don't Boil the Ocean)
+============================================================
+
+This is the most important step. Break the project into small, verifiable milestones. Here's our 24-milestone plan:
+
+Phase 1 — Foundation (M1-M2)
+- M1: Project scaffold (Go module, Kubebuilder, Makefile, Dockerfile, CI)
+- M2: API types, unit tests, ADRs, documentation
+
+Phase 2 — Production Hardening (M3-M5)
+- M3: Error classification, SSA conflict retries, concurrency, failure engineering
+- M4: Grafana dashboards, alerting rules, runbooks
+- M5: OpenTelemetry tracing, container scanning, SBOM, supply chain
+
+Phase 3 — Testing & CI/CD (M6-M7)
+- M6: envtest integration tests, E2E scaffolding
+- M7: Full GitHub Actions pipeline, release automation, multi-arch builds
+
+Phase 4 — Packaging & GitOps (M8-M10)
+- M8: Kustomize overlays (dev/staging/prod), Argo CD examples
+- M9: API evolution (v1beta1 with hub/spoke conversion webhooks)
+- M10: Benchmarks, scale testing (100 apps), pprof profiling
+
+Phase 5 — Advanced Production (M11-M18)
+- M11: Leader election tuning, multi-replica failover testing
+- M12: Configurable worker concurrency, race-safe shared state
+- M13: Fault injection tests, error categorization
+- M14-M15: Enhanced observability, per-sub-reconciler tracing
+- M16: Policy-as-code (OPA/Kyverno), SLSA Level 3
+- M17: Chaos testing, mutation testing, coverage thresholds
+- M18: Canary deployments, automated rollback, multi-cluster promotion
+
+Phase 6 — Advanced Packaging & Maturity (M19-M24)
+- M19: OLM bundle, Kustomize components
+- M20: Progressive delivery (Argo Rollouts, canary + blue-green)
+- M21: v1 GA API with conversion validation
+- M22: 1000+ CR scale testing, caching optimization
+- M23: Operations guide, troubleshooting, demo scenario
+- M24: Comprehensive documentation, ADRs, CONTRIBUTING, SECURITY
+
+KEY TAKEAWAY: Each milestone should be independently testable and deployable. Don't move to the next milestone until the current one passes all tests. This is how you build production-grade software.
+
+============================================================
+STEP 6: Plan the Reconciliation Loop Logic
+============================================================
+
+The reconcile function is called on every change. Plan it carefully:
+
+1. FETCH — Get the PlatformApplication from the cache
+2. HANDLE DELETION — If being deleted, run finalizer cleanup
+3. ADD FINALIZER — Ensure cleanup hook is present
+4. COMPUTE DESIRED STATE — Each sub-reconciler builds desired resources
+5. APPLY — Use Server-Side Apply to create/update each resource
+6. DETECT DRIFT — SSA compares desired vs actual; only writes on changes
+7. UPDATE STATUS — Set conditions, readyReplicas, URL
+8. RETURN — Requeue if needed (progress check, error retry)
+
+Error handling strategy:
+- Transient errors (API timeout) -> exponential backoff retry
+- Conflict errors (version mismatch) -> short delay, re-fetch fresh state
+- Permanent errors (RBAC denied) -> long delay, alert for manual intervention
+
+KEY TAKEAWAY: Make your reconcile function idempotent. Calling it 100 times with the same input must produce the same result as calling it once. This is non-negotiable.
+
+============================================================
+STEP 7: Plan Testing from Day One
+============================================================
+
+Testing pyramid for operators:
+
+Unit Tests (fastest, most numerous)
+- Test each sub-reconciler's build function as a pure function
+- Test webhook defaulting and validation
+- Test error classification
+- Test condition helpers
+
+Integration Tests (envtest)
+- Start a real API server locally (envtest)
+- Create a PlatformApplication, verify child resources appear
+- Update spec, verify resources update
+- Delete, verify garbage collection
+
+Scale Tests
+- Reconcile 1000 CRs concurrently
+- Measure throughput (we hit 410 reconciles/sec)
+- Verify 0 errors under load
+
+Chaos Tests
+- Inject transient errors via client interceptor
+- Simulate API server failures
+- Test rapid create/delete cycles
+- Verify graceful degradation
+
+E2E Tests (Kind cluster)
+- Install operator on real cluster
+- Create CR, verify all 7 resources
+- Test drift correction (manually change a resource, verify operator reverts)
+- Test deletion and cleanup
+
+HA Tests
+- Concurrent reconcilers with race detector
+- Leader election idempotency
+- Graceful shutdown mid-reconcile
+- PDB protection
+
+KEY TAKEAWAY: If you can't test it, you can't ship it. Start with unit tests in M2, add integration tests in M6, add chaos tests in M17. Each milestone adds a new test layer.
+
+============================================================
+STEP 8: Plan Observability
+============================================================
+
+An operator without observability is a black box in production. Plan for:
+
+Metrics (Prometheus):
+- reconcile_total (counter by result: success/error)
+- reconcile_duration_seconds (histogram)
+- active_reconcilers (gauge)
+- resource_apply_total (counter by resource + outcome)
+- noop_apply_total (counter — measures SSA efficiency)
+- api_call_duration_seconds (histogram by operation + resource)
+
+Tracing (OpenTelemetry):
+- Top-level reconcile span with correlation ID
+- Child spans for each sub-reconciler
+- Span events for resource create/update/delete
+
+Logging (structured JSON):
+- Controller name, resource name, namespace, operation, result, duration
+- Never log secrets
+
+Dashboards (Grafana):
+- Reconcile rate and error rate
+- Duration percentiles (p50, p95, p99)
+- Active reconcilers and queue depth
+- Per-resource apply outcomes
+
+Alerting:
+- SLO-based: error rate > 5%, p95 latency > 2s
+- Multi-window burn rate alerting (1h, 6h, 1d, 3d windows)
+
+KEY TAKEAWAY: If you can't see it, you can't fix it. Instrument from M3, not as an afterthought.
+
+============================================================
+STEP 9: Plan Security
+============================================================
+
+Security is not optional. Plan for:
+
+Container Security:
+- Distroless base image (no shell, no package manager)
+- Non-root user (UID 65532)
+- Read-only root filesystem
+- All Linux capabilities dropped
+- Seccomp profile: RuntimeDefault
+- No privilege escalation
+
+RBAC:
+- Least-privilege ClusterRole (only the resources the operator manages)
+- No cluster-admin
+- No access to Secrets (unless absolutely needed)
+
+Network:
+- NetworkPolicy restricting ingress to operator ports
+- Generated NetworkPolicies for managed applications
+
+Supply Chain:
+- Signed container images (cosign)
+- SBOM generation
+- SLSA Level 3 compliance
+- Trivy + govulncheck in CI
+
+Policy-as-Code:
+- OPA Gatekeeper constraints
+- Kyverno cluster policies
+
+KEY TAKEAWAY: Security must be built in from M1, not bolted on at M24. A distroless image and non-root user cost you nothing on day one.
+
+============================================================
+STEP 10: Plan the API Evolution Strategy
+============================================================
+
+Your API will evolve. Plan for it from the start:
+
+Version Strategy:
+- v1alpha1: Initial API, may break between versions
+- v1beta1: Hub (storage version), adds new fields
+- v1: GA (stable), backward compatible, no breaking changes
+
+Conversion Strategy:
+- Hub/Spoke pattern: v1beta1 is the hub, v1alpha1 and v1 are spokes
+- Conversion webhooks automatically convert between versions
+- Objects stored in hub format, served in any version
+
+Deprecation Schedule:
+- v1alpha1: Deprecated, removed in v1.0.0
+- v1beta1: Deprecated, removed in v1.1.0
+- v1: Stable, supported indefinitely
+
+KEY TAKEAWAY: Never break your API. Add fields, don't remove or rename them. Use conversion webhooks to serve multiple versions simultaneously.
+
+============================================================
+STEP 11: Plan Packaging and Distribution
+============================================================
+
+Users will install your operator in different ways. Support all of them:
+
+Kustomize:
+- Base configuration in config/default/
+- Environment overlays: dev, staging, production
+- Reusable components: monitoring, security, HA
+
+Helm:
+- Helm chart with configurable values
+- NOTES.txt with post-install instructions
+
+OLM (OperatorHub):
+- ClusterServiceVersion (CSV) for OperatorHub distribution
+- ALM examples for the UI
+- Install modes: OwnNamespace, SingleNamespace, AllNamespaces
+
+GitOps:
+- Argo CD Application and ApplicationSet examples
+- Progressive delivery: Argo Rollouts (canary + blue-green)
+- AnalysisTemplates for automated health checks
+
+KEY TAKEAWAY: Don't force one installation method. Give users choices. Kustomize for flexibility, Helm for simplicity, OLM for marketplace.
+
+============================================================
+STEP 12: Plan Documentation
+============================================================
+
+Code without documentation is unfinished. Plan for:
+
+User Documentation:
+- README with quick start, examples, API reference
+- Operations guide (installation, scaling, backup, health checks)
+- Troubleshooting guide (common issues + solutions)
+- Demo scenario (step-by-step walkthrough)
+
+Developer Documentation:
+- CONTRIBUTING.md (workflow, standards, PR process)
+- ADRs (Architecture Decision Records for key decisions)
+- File-by-file explanation document
+- Development guide (local setup, testing, debugging)
+
+Security Documentation:
+- SECURITY.md (vulnerability reporting, threat model)
+- Security best practices
+
+Operational Documentation:
+- Runbooks (high error rate, operator down, slow reconciliation)
+- Demo scenario for presentations
+
+KEY TAKEAWAY: Write documentation as you go, not at the end. Each milestone should produce documentation alongside code.
+
+============================================================
+SUMMARY: The Planning Checklist
+============================================================
+
+Before writing any code, answer these 12 questions:
+
+[ ] 1. What problem am I solving? (What manual work am I automating?)
+[ ] 2. What does my API look like? (Spec fields, status fields, defaults, validation)
+[ ] 3. What tools am I using? (Go, controller-runtime, Kubebuilder, SSA)
+[ ] 4. What reconciliation pattern am I using? (Single vs sub-reconciler)
+[ ] 5. What are my milestones? (Break into 20+ small verifiable phases)
+[ ] 6. What does my reconcile loop look like? (Fetch, delete, compute, apply, status)
+[ ] 7. How am I testing? (Unit, integration, scale, chaos, e2e, HA)
+[ ] 8. How am I observing? (Metrics, tracing, logging, dashboards, alerting)
+[ ] 9. How am I securing? (Distroless, non-root, RBAC, NetworkPolicy, SBOM)
+[ ] 10. How am I evolving the API? (Versioning, conversion, deprecation)
+[ ] 11. How am I packaging? (Kustomize, Helm, OLM, GitOps)
+[ ] 12. How am I documenting? (README, ADRs, runbooks, operations guide)
+
+============================================================
+
+Building a Kubernetes Operator is a journey. Start small, test relentlessly, and ship incrementally. The 24-milestone approach worked perfectly — each milestone was independently testable and deployable.
+
+The full source code with all 24 milestones is here:
+https://github.com/shakthi-vinayak/Kubernetes-Operators
+
+If you found this helpful, share it with your team. And if you're building an operator, I'd love to hear about your experience.
+
+#Kubernetes #KubernetesOperator #PlatformEngineering #DevOps #CloudNative #Go #ControllerRuntime #GitOps #OpenSource
