@@ -69,9 +69,9 @@ type PlatformApplicationSpec struct {
 
 // ImageSpec defines the container image configuration.
 type ImageSpec struct {
-	Repository string             `json:"repository"`
-	Tag        string             `json:"tag"`
-	PullPolicy corev1.PullPolicy  `json:"pullPolicy,omitempty"`
+	Repository string            `json:"repository"`
+	Tag        string            `json:"tag"`
+	PullPolicy corev1.PullPolicy `json:"pullPolicy,omitempty"`
 }
 
 // ReplicasSpec defines the replica count range.
@@ -94,10 +94,10 @@ type AutoscalingSpec struct {
 
 // GatewaySpec defines Gateway API HTTPRoute configuration.
 type GatewaySpec struct {
-	Enabled      bool   `json:"enabled"`
-	Host         string `json:"host,omitempty"`
-	GatewayRef   string `json:"gatewayRef,omitempty"`
-	PathPrefix   string `json:"pathPrefix,omitempty"`
+	Enabled    bool   `json:"enabled"`
+	Host       string `json:"host,omitempty"`
+	GatewayRef string `json:"gatewayRef,omitempty"`
+	PathPrefix string `json:"pathPrefix,omitempty"`
 }
 
 // ObservabilitySpec defines monitoring configuration.
@@ -138,11 +138,11 @@ type RolloutSpec struct {
 
 // PlatformApplicationStatus defines the observed state of PlatformApplication.
 type PlatformApplicationStatus struct {
-	ObservedGeneration int64            `json:"observedGeneration,omitempty"`
-	ReadyReplicas      int32            `json:"readyReplicas,omitempty"`
-	URL                string           `json:"url,omitempty"`
+	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+	ReadyReplicas      int32              `json:"readyReplicas,omitempty"`
+	URL                string             `json:"url,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
-	DeployedVersion    string           `json:"deployedVersion,omitempty"`
+	DeployedVersion    string             `json:"deployedVersion,omitempty"`
 }
 
 // +kubebuilder:object:root=true

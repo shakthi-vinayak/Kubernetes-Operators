@@ -1,4 +1,5 @@
 package scale
+package scale
 
 import (
 	"context"

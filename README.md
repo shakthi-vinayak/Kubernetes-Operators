@@ -1,4 +1,13 @@
 # Kubernetes Platform Operator
+<!-- 
+KEYWORDS:
+kubernetes, k8s, kubernetes-operator, custom-resource-definition, crd,
+reconciliation-loop, controller-runtime, kubebuilder, operator-sdk, 
+go, golang, cloud-native, devops, gitops, automation, orchestration
+-->
+
+<!-- search_terms: k8s-operator, custom-controllers, kubebuilder-tutorial, controller-runtime-examples, cloud-native-automation -->
+
 
 [![CI](https://github.com/shakthi-vinayak/Kubernetes-Operators/actions/workflows/ci.yaml/badge.svg)](https://github.com/shakthi-vinayak/Kubernetes-Operators/actions/workflows/ci.yaml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/example/platform-operator)](https://goreportcard.com/report/github.com/example/platform-operator)
