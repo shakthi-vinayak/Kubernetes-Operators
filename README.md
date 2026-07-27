@@ -1,5 +1,6 @@
 # Kubernetes Platform Operator
 <!-- 
+Author: Shakthi Vinayak - Platorm engineer
 KEYWORDS:
 kubernetes, k8s, kubernetes-operator, custom-resource-definition, crd,
 reconciliation-loop, controller-runtime, kubebuilder, operator-sdk, 
