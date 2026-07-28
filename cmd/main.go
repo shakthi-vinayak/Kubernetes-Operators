@@ -132,19 +132,23 @@ func main() {
 	}
 
 	// Register admission webhooks for both API versions.
-	if err := ctrl.NewWebhookManagedBy(mgr, &platformv1alpha1.PlatformApplication{}).
-		WithDefaulter(&platformv1alpha1.PlatformApplicationDefaulter{}).
-		WithValidator(&platformv1alpha1.PlatformApplicationValidator{}).
-		Complete(); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "PlatformApplication v1alpha1")
-		os.Exit(1)
-	}
-	if err := ctrl.NewWebhookManagedBy(mgr, &platformv1beta1.PlatformApplication{}).
-		WithDefaulter(&platformv1beta1.PlatformApplicationDefaulter{}).
-		WithValidator(&platformv1beta1.PlatformApplicationValidator{}).
-		Complete(); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "PlatformApplication v1beta1")
-		os.Exit(1)
+	// Skip when ENABLE_WEBHOOKS=false (local development with `make run`,
+	// where no TLS serving certificates are available).
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := ctrl.NewWebhookManagedBy(mgr, &platformv1alpha1.PlatformApplication{}).
+			WithDefaulter(&platformv1alpha1.PlatformApplicationDefaulter{}).
+			WithValidator(&platformv1alpha1.PlatformApplicationValidator{}).
+			Complete(); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "PlatformApplication v1alpha1")
+			os.Exit(1)
+		}
+		if err := ctrl.NewWebhookManagedBy(mgr, &platformv1beta1.PlatformApplication{}).
+			WithDefaulter(&platformv1beta1.PlatformApplicationDefaulter{}).
+			WithValidator(&platformv1beta1.PlatformApplicationValidator{}).
+			Complete(); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "PlatformApplication v1beta1")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

@@ -901,6 +901,10 @@ helm install platform-operator charts/platform-operator \
   --create-namespace
 ```
 
+### Uninstall
+
+To completely remove the operator from your cluster, follow the [Uninstall Guide](UNINSTALL.md). It covers all installation methods (Makefile/Kustomize, Helm, Argo CD), finalizer troubleshooting, and a post-removal verification checklist.
+
 ---
 
 ## Updating & Extending This Operator
