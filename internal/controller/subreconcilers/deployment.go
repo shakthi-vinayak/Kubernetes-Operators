@@ -3,6 +3,7 @@ package subreconcilers
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -126,10 +127,17 @@ func buildDesiredDeployment(app *platformv1alpha1.PlatformApplication) *appsv1.D
 	}
 
 	// Inject configuration as environment variables.
+	// Keys are sorted to keep the pod template deterministic; Go map
+	// iteration order is random and would churn ReplicaSets on every reconcile.
 	if len(app.Spec.Configuration) > 0 {
-		envVars := make([]corev1.EnvVar, 0, len(app.Spec.Configuration))
-		for k, v := range app.Spec.Configuration {
-			envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
+		keys := make([]string, 0, len(app.Spec.Configuration))
+		for k := range app.Spec.Configuration {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		envVars := make([]corev1.EnvVar, 0, len(keys))
+		for _, k := range keys {
+			envVars = append(envVars, corev1.EnvVar{Name: k, Value: app.Spec.Configuration[k]})
 		}
 		container.Env = envVars
 	}
@@ -157,6 +165,12 @@ func buildDesiredDeployment(app *platformv1alpha1.PlatformApplication) *appsv1.D
 			ru.MaxSurge = &v
 		}
 		strategy.RollingUpdate = ru
+	}
+
+	// Provide a writable /tmp for apps that need scratch space (e.g. nginx
+	// temp dirs), since readOnlyRootFilesystem is enforced on the container.
+	container.VolumeMounts = []corev1.VolumeMount{
+		{Name: "tmp", MountPath: "/tmp"},
 	}
 
 	dep := &appsv1.Deployment{
@@ -190,6 +204,14 @@ func buildDesiredDeployment(app *platformv1alpha1.PlatformApplication) *appsv1.D
 						},
 					},
 					Containers: []corev1.Container{container},
+					Volumes: []corev1.Volume{
+						{
+							Name: "tmp",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+					},
 				},
 			},
 		},

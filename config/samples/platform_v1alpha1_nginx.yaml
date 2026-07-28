@@ -1,0 +1,55 @@
+apiVersion: platform.example.io/v1alpha1
+kind: PlatformApplication
+metadata:
+  name: nginx-app
+  namespace: default
+spec:
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.27"
+    pullPolicy: IfNotPresent
+
+  replicas:
+    min: 2
+    max: 5
+
+  service:
+    port: 8080
+    type: ClusterIP
+
+  configuration:
+    LOG_LEVEL: "info"
+    ENVIRONMENT: "development"
+
+  autoscaling:
+    enabled: true
+    targetCPUUtilization: 70
+
+  gateway:
+    enabled: true
+    host: nginx.example.com
+    gatewayRef: gateway-system/main-gateway
+    pathPrefix: /
+
+  observability:
+    metrics: true
+
+  security:
+    networkPolicy: true
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  healthChecks:
+    livenessPath: /
+    readinessPath: /
+
+  rollout:
+    strategy: RollingUpdate
+    maxUnavailable: "1"
+    maxSurge: "1"
