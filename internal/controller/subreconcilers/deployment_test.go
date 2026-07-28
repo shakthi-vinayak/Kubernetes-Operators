@@ -1,5 +1,4 @@
 package subreconcilers
-package subreconcilers
 
 import (
 	"testing"
