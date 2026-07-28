@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	platformv1alpha1 "github.com/example/platform-operator/api/v1alpha1"
 	platformv1beta1 "github.com/example/platform-operator/api/v1beta1"
@@ -34,6 +35,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(platformv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(platformv1beta1.AddToScheme(scheme))
+	// Gateway API types (HTTPRoute) managed by the networking subreconciler.
+	utilruntime.Must(gatewayv1.Install(scheme))
 }
 
 // main is the entry point for the Platform Operator.
